@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bot-fork"
+version = "0.1.0"
+authors = [
+  { name = "Bot Fork Team", email = "none" },
+]
+description = "Python-библиотека прототипирования диалоговых сцен для Telegram и ВКонтакте"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: GNU Affero General Public License v3 (AGPLv3)",
+    "Operating System :: OS Independent",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "python-dotenv"
+]
+
+[project.optional-dependencies]
+telegram = [
+    "aiogram>=3.4.0",
+]
+vk = [
+    "vkbottle>=4.4.0",
+]
+all = [
+    "aiogram>=3.4.0",
+    "vkbottle>=4.4.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/scenomost/bot-fork"
+"Documentation" = "https://github.com/scenomost/bot-fork#readme"

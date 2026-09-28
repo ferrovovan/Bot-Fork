@@ -1,0 +1,16 @@
+# ==============================================================================
+# Bot Fork MVP 3.1 Dependencies
+# ==============================================================================
+
+# For ENV
+python-dotenv
+
+# Telegram Adapter (aiogram 3.x)
+aiogram>=3.4.0
+
+# VKontakte Adapter (vkbottle 4.x)
+vkbottle>=4.4.0
+
+# Optional: Testing & Development
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

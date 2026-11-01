@@ -166,6 +166,10 @@ class SceneDefinition:
     # возврат: None (тихо) | str | list[str] | list[OutgoingMessage] | list смешанно.
     # Без него — прежний generic-отчёт. Ядро больше не знает текстов конкретных сцен.
     on_complete: Optional[Callable[..., Any]] = None
+    # F-27: шапка при перезапуске сцены, где уже шёл диалог. Раньше ядро вшивало
+    # «Анкета начата заново.» во все сцены — врали и админка, и дневник.
+    # None → generic «Диалог начат заново.», "" → шапки нет вовсе (меню-сцены).
+    restart_text: Optional[str] = None
     _step_map: Dict[str, StepDefinition] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -225,6 +229,7 @@ def Scene(
     start_step_id: Optional[str] = None,
     lane: str = "user",
     on_complete: Optional[Callable[..., Any]] = None,
+    restart_text: Optional[str] = None,
 ) -> SceneDefinition:
     """
     Factory function matching MVP target API specification:
@@ -241,6 +246,7 @@ def Scene(
         id=id,
         entry_commands=norm_commands,
         start_step_id=start_id,
+        restart_text=restart_text,
         steps=step_tuple,
         lane=lane,
         on_complete=on_complete,

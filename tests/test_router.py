@@ -90,12 +90,43 @@ class TestDialogRouter(unittest.IsolatedAsyncioTestCase):
         event = IncomingEvent(platform="telegram", user_id="555", chat_id="555", text="/info")
         result = await self.router.route(event)
 
-        self.assertIn("Анкета начата заново", result.messages[0].text)
+        self.assertIn("Диалог начат заново", result.messages[0].text)  # F-27: generic, не «анкета»
         self.assertIn("Как к вам обращаться?", result.messages[0].text)
         # Previous data should be cleared
         stored = await self.storage.get(self.key)
         self.assertEqual(stored.data, {})
         self.assertEqual(stored.step_id, "name")
+
+
+class TestRestartText(unittest.IsolatedAsyncioTestCase):
+    """F-27: шапка перезапуска принадлежит сцене, не ядру."""
+
+    async def _restart(self, restart_text, mid_step="role"):
+        storage = MemoryStateStorage()
+        registry = SceneRegistry()
+        kwargs = {} if restart_text is None else {"restart_text": restart_text}
+        registry.register(Scene(
+            id="panel",
+            entry_commands=("/panel",),
+            steps=(
+                Step.text("name", "Шапка панели", next=mid_step),
+                Step.choice("role", "Роль?", buttons=(Button("Готово", "ok"),), complete=True),
+            ),
+            **kwargs,
+        ))
+        router = DialogRouter(registry=registry, storage=storage)
+        key = SessionKey(platform="telegram", user_id="777", chat_id="777")
+        await storage.set(UserSession(session_key=key, scene_id="panel", step_id=mid_step))
+        return await router.route(IncomingEvent(
+            platform="telegram", user_id="777", chat_id="777", text="/panel"))
+
+    async def test_scene_own_text(self):
+        r = await self._restart("🛡 Панель переоткрыта.")
+        self.assertIn("🛡 Панель переоткрыта.", r.messages[0].text)
+
+    async def test_empty_suppresses_prefix(self):
+        r = await self._restart("")
+        self.assertEqual(r.messages[0].text.strip(), "Шапка панели")
 
 
 if __name__ == "__main__":

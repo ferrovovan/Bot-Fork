@@ -220,8 +220,13 @@ class DialogRouter:
             step_id=scene.start_step_id,
             data=dict(initial_data or {}),
         )
-        # Если в этой полосе уже был диалог этой же сцены — предупредить о перезапуске
-        prefix = "Анкета начата заново.\n\n" if had_session else ""
+        # F-27: перезапуск сцены, где уже шёл диалог. Текст шапки принадлежит сцене,
+        # а не ядру: раньше тут было вшито «Анкета начата заново.», чем портили
+        # ответ админского меню и дневника. None → generic, "" → шапки нет.
+        if had_session and scene.restart_text != "":
+            prefix = f"{scene.restart_text or 'Диалог начат заново.'}\n\n"
+        else:
+            prefix = ""
         prompt_text = prefix + start_step.render_prompt(new_session)
 
         await self.storage.set(new_session)

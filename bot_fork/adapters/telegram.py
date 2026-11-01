@@ -423,6 +423,17 @@ class TelegramAdapter(PlatformAdapter):
             "banChatMember",
         )
 
+    async def rename_chat(self, chat_id: str, title: str) -> None:
+        """F-24: setChatTitle (бот-админ с can_change_info; иначе PlatformError)."""
+        if self._mock_mode():
+            self.chat_ops.append({"op": "rename_chat", "chat_id": chat_id, "title": title})
+            return
+        bot = await self._ensure_bot()
+        try:
+            await bot.set_chat_title(chat_id=int(chat_id), title=title)
+        except Exception as e:
+            raise PlatformError(f"Telegram API setChatTitle failed: {e}") from e
+
     async def get_invite_link(self, chat_id: str) -> str:
         """F-13: createChatInviteLink (бот-админ с правом can_invite_users)."""
         if self._mock_mode():

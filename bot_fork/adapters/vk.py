@@ -273,6 +273,17 @@ class VKAdapter(PlatformAdapter):
         except Exception as e:
             raise PlatformError(f"VK API messages.removeChatUser failed: {e}") from e
 
+    async def rename_chat(self, chat_id: str, title: str) -> None:
+        """F-24: messages.editChat(chat_id, title)."""
+        if self._mock_mode():
+            self.chat_ops.append({"op": "rename_chat", "chat_id": chat_id, "title": title})
+            return
+        api = await self._ensure_api()
+        try:
+            await api.messages.edit_chat(chat_id=self._peer_to_chat_id(chat_id), title=title)
+        except Exception as e:
+            raise PlatformError(f"VK API messages.editChat failed: {e}") from e
+
     async def get_invite_link(self, chat_id: str) -> str:
         """F-13: messages.getInviteLink(peer_id)."""
         if self._mock_mode():

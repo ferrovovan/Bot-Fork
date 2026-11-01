@@ -16,6 +16,7 @@ from bot_fork import (
     Step,
     MemoryStateStorage,
 )
+from bot_fork.adapters.base import PlatformAdapter
 from bot_fork.adapters.telegram import TelegramAdapter
 from bot_fork.adapters.vk import VKAdapter, VK_CHAT_PEER_BASE
 
@@ -310,3 +311,37 @@ class TestMessageEditing(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RenameChatTests(unittest.IsolatedAsyncioTestCase):
+    """F-24: переименование чата (team_name, 03 §6)."""
+
+    async def test_vk_mock_renames(self):
+        a = VKAdapter()
+        await a.rename_chat("2000000001", "Волки с Уолл-стрит")
+        op = [o for o in a.chat_ops if o["op"] == "rename_chat"]
+        self.assertEqual(op[0]["title"], "Волки с Уолл-стрит")
+
+    async def test_tg_mock_renames(self):
+        a = TelegramAdapter()
+        await a.rename_chat("-100555", "Медведи")
+        self.assertIn("rename_chat", [o["op"] for o in a.chat_ops])
+
+    async def test_base_default_raises(self):
+        class Bare(PlatformAdapter):
+            platform_name = "bare"
+
+            def format_outgoing(self, message):
+                return {}
+
+            async def send(self, message):
+                return None
+
+            def normalize_event(self, update):
+                return None
+
+            async def start_polling(self, handler):
+                return None
+
+        with self.assertRaises(PlatformOperationNotSupported):
+            await Bare().rename_chat("1", "x")

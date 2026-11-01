@@ -77,6 +77,10 @@ class PlatformAdapter(ABC):
         """F-13: исключить участника из чата (бот должен быть админом чата)."""
         raise PlatformOperationNotSupported(f"{self.platform_name}: исключение участников не реализовано")
 
+    async def rename_chat(self, chat_id: str, title: str) -> None:
+        """F-24: переименовать групповой чат (03 §6 согласование названия команды)."""
+        raise PlatformOperationNotSupported(f"{self.platform_name}: переименование чатов недоступно боту")
+
     async def get_invite_link(self, chat_id: str) -> str:
         """F-13: ссылка-приглашение в чат (бот должен быть админом с правом invite)."""
         raise PlatformOperationNotSupported(f"{self.platform_name}: ссылка-приглашение недоступна боту")

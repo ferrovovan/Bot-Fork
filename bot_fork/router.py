@@ -90,83 +90,54 @@ class DialogRouter:
         text = (event.text or "").strip()
         command_token = text.split()[0].lower() if text.startswith("/") else ""
 
-        # Step 1: Handle /cancel command (system command, handled before any scene logic)
+        # Step 1: Handle /cancel (system command, before any scene logic).
+        # F-06: отменяется «верхний» диалог — сначала system-слот, иначе user.
         if command_token == "/cancel":
-            existing_session = await self.storage.get(event.session_key)
-            if existing_session is not None:
-                await self.storage.clear(event.session_key)
-                return HandlerResult(
-                    messages=(
-                        OutgoingMessage(
-                            chat_id=event.chat_id,
-                            text=apply_branding("Диалог отменён. Для нового запуска отправьте /info."),
+            for lane in ("system", "user"):
+                key = event.session_key.with_lane(lane)
+                existing_session = await self.storage.get(key)
+                if existing_session is not None:
+                    await self.storage.clear(key)
+                    return HandlerResult(
+                        messages=(
+                            OutgoingMessage(
+                                chat_id=event.chat_id,
+                                text=apply_branding("Диалог отменён. Для нового запуска отправьте /info."),
+                            ),
                         ),
+                        session_after=None,
+                        clear_session=True,
+                        error=None,
+                    )
+            return HandlerResult(
+                messages=(
+                    OutgoingMessage(
+                        chat_id=event.chat_id,
+                        text=apply_branding("Активного диалога нет."),
                     ),
-                    session_after=None,
-                    clear_session=True,
-                    error=None,
-                )
-            else:
-                return HandlerResult(
-                    messages=(
-                        OutgoingMessage(
-                            chat_id=event.chat_id,
-                            text=apply_branding("Активного диалога нет."),
-                        ),
-                    ),
-                    session_after=None,
-                    clear_session=False,
-                    error=None,
-                )
+                ),
+                session_after=None,
+                clear_session=False,
+                error=None,
+            )
 
-        # Step 2: Fetch active session
-        session = await self.storage.get(event.session_key)
+        # Step 2: F-06 — активные сессии обеих полос чата
+        system_session = await self.storage.get(event.session_key.with_lane("system"))
+        user_session = await self.storage.get(event.session_key.with_lane("user"))
 
-        # Step 3: Handle entry commands (e.g., /info) and scene buttons (F-23: payload "scene:<id>")
+        # Step 3: entry-команды и scene-кнопки (F-23: payload "scene:<id>").
+        # Сцена стартует в своей полосе: system-сцены не трогают анкету игрока.
         matched_scene = self.registry.resolve_command(text)
         if matched_scene is None:
             matched_scene = self._resolve_scene_button(event)
 
         if matched_scene is not None:
-            # Starting new or restarting active scene
-            new_session = UserSession(
-                session_key=event.session_key,
-                scene_id=matched_scene.id,
-                step_id=matched_scene.start_step_id,
-                data={},
-            )
-            start_step = matched_scene.get_step(matched_scene.start_step_id)
-            if start_step is None:
-                return HandlerResult(
-                    messages=(
-                        OutgoingMessage(
-                            chat_id=event.chat_id,
-                            text=apply_branding("Ошибка запуска сцены: начальный шаг не найден."),
-                        ),
-                    ),
-                    clear_session=True,
-                    error=ErrorInfo(code="INTERNAL_ERROR", message="Start step not found", retryable=False),
-                )
+            lane_key = event.session_key.with_lane(matched_scene.lane)
+            existing = system_session if matched_scene.lane == "system" else user_session
+            return await self.begin_scene(matched_scene, lane_key, event.chat_id, had_session=existing is not None)
 
-            # If user already had a session in this scene, notify restart
-            prefix = "Анкета начата заново.\n\n" if session is not None else ""
-            prompt_text = prefix + start_step.prompt
-
-            await self.storage.set(new_session)
-            return HandlerResult(
-                messages=(
-                    OutgoingMessage(
-                        chat_id=event.chat_id,
-                        text=apply_branding(prompt_text),
-                        buttons=start_step.buttons,
-                    ),
-                ),
-                session_after=new_session,
-                clear_session=False,
-                error=None,
-            )
-
-        # Step 4: If no active session and not an entry command
+        # Step 4: нет активной сессии ни в одной полосе — служебный ответ
+        session = system_session or user_session
         if session is None:
             available_cmds = ", ".join(self.registry.list_entry_commands()) or "/info"
             if command_token:
@@ -188,10 +159,10 @@ class DialogRouter:
                 error=ErrorInfo(code=code, message=msg, retryable=True),
             )
 
-        # Step 5: Active session exists - dispatch to FSMEngine
+        # Step 5: активная сессия — system-полоса перехватывает (F-06), иначе user
         scene = self.registry.get_scene(session.scene_id)
         if scene is None:
-            await self.storage.clear(event.session_key)
+            await self.storage.clear(session.session_key)
             return HandlerResult(
                 messages=(
                     OutgoingMessage(
@@ -208,13 +179,60 @@ class DialogRouter:
         if inspect.isawaitable(result):
             result = await result
 
-        # Persist updated session or clear upon completion
+        # Persist updated session or clear upon completion — в полосе самой сессии,
+        # завершение system-сцены открывает дорогу user-сессии (F-06).
         if result.clear_session:
-            await self.storage.clear(event.session_key)
+            await self.storage.clear(session.session_key)
         elif result.session_after is not None:
             await self.storage.set(result.session_after)
 
         return result
+
+    async def begin_scene(
+        self,
+        scene: SceneDefinition,
+        lane_key,
+        chat_id: str,
+        had_session: bool = False,
+        initial_data: Optional[Dict] = None,
+    ) -> HandlerResult:
+        """Старт/перезапуск сцены в заданной полосе (общий путь для команд, кнопок и F-22)."""
+        start_step = scene.get_step(scene.start_step_id)
+        if start_step is None:
+            return HandlerResult(
+                messages=(
+                    OutgoingMessage(
+                        chat_id=chat_id,
+                        text=apply_branding("Ошибка запуска сцены: начальный шаг не найден."),
+                    ),
+                ),
+                clear_session=True,
+                error=ErrorInfo(code="INTERNAL_ERROR", message="Start step not found", retryable=False),
+            )
+
+        new_session = UserSession(
+            session_key=lane_key,
+            scene_id=scene.id,
+            step_id=scene.start_step_id,
+            data=dict(initial_data or {}),
+        )
+        # Если в этой полосе уже был диалог этой же сцены — предупредить о перезапуске
+        prefix = "Анкета начата заново.\n\n" if had_session else ""
+        prompt_text = prefix + start_step.prompt
+
+        await self.storage.set(new_session)
+        return HandlerResult(
+            messages=(
+                OutgoingMessage(
+                    chat_id=chat_id,
+                    text=apply_branding(prompt_text),
+                    buttons=start_step.buttons,
+                ),
+            ),
+            session_after=new_session,
+            clear_session=False,
+            error=None,
+        )
 
     def _resolve_scene_button(self, event: IncomingEvent) -> Optional[SceneDefinition]:
         """

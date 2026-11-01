@@ -16,7 +16,15 @@ from bot_fork.adapters.base import PlatformAdapter
 from bot_fork.adapters.telegram import TelegramAdapter
 from bot_fork.adapters.vk import VKAdapter
 from bot_fork.exceptions import ConfigError
-from bot_fork.models import Attachment, Button, ErrorInfo, HandlerResult, IncomingEvent, OutgoingMessage
+from bot_fork.models import (
+    Attachment,
+    Button,
+    ErrorInfo,
+    HandlerResult,
+    IncomingEvent,
+    OutgoingMessage,
+    SessionKey,
+)
 from bot_fork.router import DialogRouter, SceneRegistry
 from bot_fork.scene import SceneDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
@@ -131,6 +139,43 @@ class BotForkApp:
             raise ConfigError("register_scene expects a SceneDefinition instance")
         self.registry.register(scene)
         logger.info("Registered scene '%s' with entry commands: %s", scene.id, scene.entry_commands)
+
+    async def start_scene(
+        self,
+        scene_id: str,
+        *,
+        user_id: str,
+        chat_id: str,
+        data: Optional[dict] = None,
+        send_prompt: bool = True,
+    ) -> HandlerResult:
+        """
+        F-22: программный вход в сцену без входящего события — для jobs/outbox
+        («подтвердите слот», «карточка тестовой игры»). Сцена стартует в своей полосе
+        (lane), данные можно передать сразу в session.data; prompt первого шага
+        доставляется текущим адаптером (отключается send_prompt=False).
+        """
+        scene = self.registry.get_scene(scene_id)
+        if scene is None:
+            raise ConfigError(f"Scene '{scene_id}' is not registered")
+        lane_key = SessionKey(
+            platform=self.platform,
+            user_id=str(user_id),
+            chat_id=str(chat_id),
+            lane=scene.lane,
+        )
+        existing = await self.storage.get(lane_key)
+        result = await self.router.begin_scene(
+            scene, lane_key, str(chat_id), had_session=existing is not None, initial_data=data
+        )
+        if send_prompt:
+            for out_msg in result.messages:
+                await self.adapter.send(out_msg)
+        logger.info(
+            "Programmatic scene start | platform=%s | scene=%s | lane=%s",
+            self.platform, scene_id, scene.lane,
+        )
+        return result
 
     async def handle(self, event: IncomingEvent) -> HandlerResult:
         """

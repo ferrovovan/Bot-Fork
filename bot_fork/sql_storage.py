@@ -48,26 +48,56 @@ class SqlStateStorage(StateStorage):
     # ---------- схема ----------
 
     def _ensure_schema(self) -> None:
-        sql = f"""
-        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-            platform   TEXT NOT NULL,
-            user_id    TEXT NOT NULL,
-            chat_id    TEXT NOT NULL,
-            scene_id   TEXT NOT NULL,
-            step_id    TEXT NOT NULL,
-            data       TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY (platform, user_id, chat_id)
-        )
+        """
+        Схема v2: ключ (platform, user_id, chat_id, lane) — F-06.
+        Старая таблица v1 (без lane) мигрируется на месте: строки получают lane='user'.
         """
         cur = self._conn.cursor()
         try:
-            cur.execute(sql)
+            cur.execute(
+                "SELECT name FROM pragma_table_info(?) WHERE name='lane'", (TABLE_NAME,)
+            )
+            has_lane = cur.fetchone() is not None
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (TABLE_NAME,)
+            )
+            table_exists = cur.fetchone() is not None
+
+            if table_exists and not has_lane:
+                # миграция v1 → v2: SQLite не умеет менять PK, пересоздаём таблицу
+                cur.execute(f"ALTER TABLE {TABLE_NAME} RENAME TO {TABLE_NAME}_v1")
+                cur.execute(self._create_sql(with_lane=True))
+                cur.execute(
+                    f"INSERT INTO {TABLE_NAME} "
+                    "(platform, user_id, chat_id, lane, scene_id, step_id, data, updated_at) "
+                    f"SELECT platform, user_id, chat_id, 'user', scene_id, step_id, data, updated_at "
+                    f"FROM {TABLE_NAME}_v1"
+                )
+                cur.execute(f"DROP TABLE {TABLE_NAME}_v1")
+            elif not table_exists:
+                cur.execute(self._create_sql(with_lane=True))
             self._conn.commit()
         except Exception as e:
             raise StorageError(f"Не удалось создать таблицу сессий: {e}") from e
         finally:
             cur.close()
+
+    @staticmethod
+    def _create_sql(with_lane: bool) -> str:
+        assert with_lane, "схема v1 больше не создаётся"
+        return f"""
+        CREATE TABLE {TABLE_NAME} (
+            platform   TEXT NOT NULL,
+            user_id    TEXT NOT NULL,
+            chat_id    TEXT NOT NULL,
+            lane       TEXT NOT NULL DEFAULT 'user',
+            scene_id   TEXT NOT NULL,
+            step_id    TEXT NOT NULL,
+            data       TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (platform, user_id, chat_id, lane)
+        )
+        """
 
     # ---------- DBAPI-операции (в потоке) ----------
 
@@ -76,8 +106,8 @@ class SqlStateStorage(StateStorage):
         try:
             cur.execute(
                 f"SELECT scene_id, step_id, data, updated_at FROM {TABLE_NAME} "
-                "WHERE platform=? AND user_id=? AND chat_id=?",
-                (key.platform, key.user_id, key.chat_id),
+                "WHERE platform=? AND user_id=? AND chat_id=? AND lane=?",
+                (key.platform, key.user_id, key.chat_id, key.lane),
             )
             row = cur.fetchone()
         finally:
@@ -106,15 +136,16 @@ class SqlStateStorage(StateStorage):
         cur = self._conn.cursor()
         try:
             cur.execute(
-                f"INSERT INTO {TABLE_NAME} (platform, user_id, chat_id, scene_id, step_id, data, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(platform, user_id, chat_id) DO UPDATE SET "
+                f"INSERT INTO {TABLE_NAME} (platform, user_id, chat_id, lane, scene_id, step_id, data, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(platform, user_id, chat_id, lane) DO UPDATE SET "
                 "scene_id=excluded.scene_id, step_id=excluded.step_id, "
                 "data=excluded.data, updated_at=excluded.updated_at",
                 (
                     k.platform,
                     k.user_id,
                     k.chat_id,
+                    k.lane,
                     session.scene_id,
                     session.step_id,
                     json.dumps(session.data, ensure_ascii=False),
@@ -131,8 +162,8 @@ class SqlStateStorage(StateStorage):
         cur = self._conn.cursor()
         try:
             cur.execute(
-                f"DELETE FROM {TABLE_NAME} WHERE platform=? AND user_id=? AND chat_id=?",
-                (key.platform, key.user_id, key.chat_id),
+                f"DELETE FROM {TABLE_NAME} WHERE platform=? AND user_id=? AND chat_id=? AND lane=?",
+                (key.platform, key.user_id, key.chat_id, key.lane),
             )
             self._conn.commit()
         finally:

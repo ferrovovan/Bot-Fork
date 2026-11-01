@@ -104,16 +104,21 @@ class Step:
 class SceneDefinition:
     """
     Immutable definition of an entire dialogue scene.
+    F-06: lane="system" — приоритетная сцена: её активная сессия перехватывает события чата,
+    пока не завершится; пользовательские диалоги (lane="user") при этом не теряются.
     """
     id: str
     entry_commands: Tuple[str, ...]
     start_step_id: str
     steps: Tuple[StepDefinition, ...]
+    lane: str = "user"
     _step_map: Dict[str, StepDefinition] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.id or not isinstance(self.id, str):
             raise ConfigError("Scene id must be a non-empty string")
+        if self.lane not in ("user", "system"):
+            raise ConfigError(f"Scene '{self.id}' lane must be 'user' or 'system', got '{self.lane}'")
         if not self.steps:
             raise ConfigError(f"Scene '{self.id}' must define at least 1 step (max 50)")
         if len(self.steps) > 50:

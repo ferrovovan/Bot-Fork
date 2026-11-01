@@ -28,6 +28,11 @@
   `create_chat`/`add_member`/`remove_member`/`get_invite_link` (F-13) и `send_ex`/`edit_message` (F-19).
   VK умеет всё; Telegram — план Б: `create_chat`/`add_member` бросают `PlatformOperationNotSupported`
   (чат создаёт админ, бот раздаёт `get_invite_link`).
+- **v1.5** — полосы диалога и программный вход (WP4, готовим Фазу 2): `SessionKey.lane`
+  («user»|«system»), `SceneDefinition.lane` — подтверждение слота перехватывает чат, анкета
+  ждёт в своём слоте и продолжается с того же шага (F-06); `app.start_scene(scene_id,
+  user_id, chat_id, data)` — запуск сцены из кода для jobs/outbox (F-22); схема
+  `SqlStateStorage` v2 (PK с lane) с авто-миграцией старых баз.
 
 [![Build Wheel & CI](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml/badge.svg)](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml)
 [![Release](https://img.shields.io/github/v/release/ferrovovan/Bot-Fork?include_prereleases&label=release)](https://github.com/ferrovovan/Bot-Fork/releases)

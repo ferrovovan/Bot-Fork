@@ -13,12 +13,17 @@ from typing import Any, Dict, Optional, Tuple
 @dataclass(frozen=True)
 class SessionKey:
     """
-    Unique composite session key isolating user, chat, and platform.
+    Unique composite session key isolating user, chat, lane, and platform.
     Prevents session collision between Telegram and VK.
+    F-06: lane — именованный слот сессии в одном чате:
+      "user"   — обычные диалоги (анкета, меню);
+      "system" — приоритетные сцены (подтверждение слота), перехватывают события,
+                 а после завершения пользовательская сессия продолжается с своего шага.
     """
     platform: str
     user_id: str
     chat_id: str
+    lane: str = "user"
 
     def __post_init__(self) -> None:
         if self.platform not in ("telegram", "vk"):
@@ -27,12 +32,19 @@ class SessionKey:
             raise ValueError("user_id cannot be empty")
         if not self.chat_id:
             raise ValueError("chat_id cannot be empty")
+        if self.lane not in ("user", "system"):
+            raise ValueError(f"Invalid lane: {self.lane}. Allowed: 'user', 'system'")
+
+    def with_lane(self, lane: str) -> "SessionKey":
+        """Ключ того же чата в другом слоте (F-06)."""
+        return SessionKey(platform=self.platform, user_id=self.user_id, chat_id=self.chat_id, lane=lane)
 
     def to_dict(self) -> Dict[str, str]:
         return {
             "platform": self.platform,
             "user_id": str(self.user_id),
             "chat_id": str(self.chat_id),
+            "lane": self.lane,
         }
 
 

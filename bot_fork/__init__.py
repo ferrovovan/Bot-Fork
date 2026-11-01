@@ -18,6 +18,7 @@ from bot_fork.exceptions import (
 )
 from bot_fork.fsm import FSMEngine, apply_branding
 from bot_fork.models import (
+    Attachment,
     Button,
     ErrorInfo,
     HandlerResult,
@@ -31,7 +32,7 @@ from bot_fork.scene import Scene, SceneDefinition, Step, StepDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
 from bot_fork.sql_storage import SqlStateStorage
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __all__ = [
     "BotForkApp",
     "Scene",
@@ -43,6 +44,7 @@ __all__ = [
     "SessionKey",
     "IncomingEvent",
     "OutgoingMessage",
+    "Attachment",
     "UserSession",
     "ErrorInfo",
     "HandlerResult",

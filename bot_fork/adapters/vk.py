@@ -10,9 +10,40 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 from bot_fork.adapters.base import EventHandler, PlatformAdapter
 from bot_fork.exceptions import PlatformError
-from bot_fork.models import Button, IncomingEvent, OutgoingMessage
+from bot_fork.models import Attachment, Button, IncomingEvent, OutgoingMessage
 
 logger = logging.getLogger("bot_fork.adapters.vk")
+
+# F-21: тип вложений VK → нормализованный content_type
+_VK_ATTACHMENT_KINDS = {
+    "photo": "photo",
+    "video": "video",
+    "audio_message": "voice",
+    "doc": "document",
+    "sticker": "sticker",
+    "graffiti": "other",
+}
+
+
+def detect_content_type(raw_message: Any) -> Optional[str]:
+    """
+    F-21: content_type входящего сообщения VK по полю attachments / стикерам.
+    Возвращает None, если это обычный текст (текст — значение по умолчанию в сцене).
+    """
+    if isinstance(raw_message, dict):
+        attachments = raw_message.get("attachments") or []
+        sticker = raw_message.get("sticker")
+    else:
+        attachments = getattr(raw_message, "attachments", None) or []
+        sticker = getattr(raw_message, "sticker", None)
+
+    if sticker:
+        return "sticker"
+    for att in attachments:
+        kind = att.get("type") if isinstance(att, dict) else getattr(att, "type", None)
+        if kind:
+            return _VK_ATTACHMENT_KINDS.get(kind, "other")
+    return None
 
 
 class VKAdapter(PlatformAdapter):
@@ -63,6 +94,7 @@ class VKAdapter(PlatformAdapter):
                 text=text,
                 payload=payload_str,
                 event_id=str(raw_event.get("event_id", msg.get("id", ""))),
+                content_type=detect_content_type(msg) or ("text" if text else None),
             )
 
         # Object with attributes
@@ -88,6 +120,7 @@ class VKAdapter(PlatformAdapter):
             text=text,
             payload=payload_str,
             event_id=str(getattr(raw_event, "id", "")),
+            content_type=detect_content_type(raw_event) or ("text" if text else None),
         )
 
     def format_outgoing(self, message: OutgoingMessage) -> Dict[str, Any]:
@@ -117,6 +150,10 @@ class VKAdapter(PlatformAdapter):
                 ensure_ascii=False,
             )
 
+        # F-01: описание вложения для мока/отладки; реальная отправка — после загрузки в VK
+        if message.attachment is not None:
+            payload["attachment"] = message.attachment.to_dict()
+
         return payload
 
     async def send(self, message: OutgoingMessage) -> None:
@@ -136,11 +173,20 @@ class VKAdapter(PlatformAdapter):
                 from vkbottle import API
                 if self._api is None:
                     self._api = API(token=self.token)
+
+                attachment_ref = None
+                if message.attachment is not None:
+                    # F-01: медиа сначала загружается в VK, потом шлётся ссылкой-вложением
+                    attachment_ref = await self._vk_upload_attachment(
+                        self._api, message
+                    )
+
                 await self._api.messages.send(
                     peer_id=int(message.chat_id) if str(message.chat_id).isdigit() else message.chat_id,
                     message=message.text,
                     random_id=0,
                     keyboard=formatted.get("keyboard"),
+                    attachment=attachment_ref,
                 )
             except ImportError:
                 logger.info(
@@ -149,6 +195,35 @@ class VKAdapter(PlatformAdapter):
                 )
             except Exception as e:
                 raise PlatformError(f"VK API send failed: {e}") from e
+
+    async def _vk_upload_attachment(self, api: Any, message: OutgoingMessage) -> str:
+        """
+        F-01: загрузка вложения (photo|document) в VK, возвращает 'photo{oid}_{pid}' | 'doc{oid}_{pid}'.
+        """
+        import aiohttp
+
+        att = message.attachment
+        peer_id = int(message.chat_id) if str(message.chat_id).isdigit() else message.chat_id
+        if att.kind == "photo":
+            server = await api.photos.get_messages_upload_server(peer_id=peer_id)
+            upload_url = server["upload_url"]
+            form_field = "photo"
+            save = api.photos.save_messages_photo
+        else:
+            server = await api.docs.get_messages_upload_server(peer_id=peer_id, type="doc")
+            upload_url = server["upload_url"]
+            form_field = "file"
+            save = api.docs.save_messages_photo if hasattr(api.docs, "save_messages_photo") else api.docs.save
+
+        form = aiohttp.FormData()
+        form.add_field(form_field, att.data, filename=att.filename)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(upload_url, data=form) as resp:
+                result = await resp.json()
+        saved = await save(**{("file" if att.kind != "photo" else "photo"): result.get(form_field, result)}, peer_id=peer_id)
+        if isinstance(saved, list):
+            saved = saved[0]
+        return f"{'photo' if att.kind == 'photo' else 'doc'}{saved['owner_id']}_{saved['id']}"
 
     async def start_polling(self, handler: EventHandler) -> None:
         """Starts VK long polling using vkbottle."""

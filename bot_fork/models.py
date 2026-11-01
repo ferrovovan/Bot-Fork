@@ -65,6 +65,8 @@ class IncomingEvent:
     text: Optional[str] = None
     payload: Optional[str] = None
     event_id: Optional[str] = None
+    # F-21: тип контента входящего сообщения — text|photo|sticker|voice|video|document|other
+    content_type: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.platform not in ("telegram", "vk"):
@@ -95,6 +97,37 @@ class IncomingEvent:
             "text": self.text,
             "payload": self.payload,
             "event_id": self.event_id,
+            "content_type": self.content_type,
+        }
+
+
+@dataclass
+class Attachment:
+    """
+    F-01: вложение к исходящему сообщению (график botgraph — photo, выгрузка — document).
+    Хранит байты в памяти; в to_dict/sent_messages попадает только описание, не байты.
+    """
+    kind: str  # "photo" | "document"
+    data: bytes
+    filename: str
+    caption: str = ""
+
+    def __post_init__(self) -> None:
+        if self.kind not in ("photo", "document"):
+            raise ValueError(f"Attachment kind must be 'photo' or 'document', got '{self.kind}'")
+        if not self.data:
+            raise ValueError("Attachment data is empty")
+        if not self.filename:
+            raise ValueError("Attachment filename is required")
+        if len(self.filename) > 128:
+            raise ValueError(f"Attachment filename too long ({len(self.filename)} > 128)")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "filename": self.filename,
+            "caption": self.caption,
+            "size": len(self.data),
         }
 
 
@@ -102,10 +135,12 @@ class IncomingEvent:
 class OutgoingMessage:
     """
     Universal outgoing message contract. Text and up to 4 text buttons.
+    F-01: optional attachment (photo/document) — уходит вместе с текстом.
     """
     chat_id: str
     text: str
     buttons: Tuple[Button, ...] = ()
+    attachment: Optional[Attachment] = None
 
     def __post_init__(self) -> None:
         if len(self.buttons) > 4:
@@ -119,6 +154,8 @@ class OutgoingMessage:
             "chat_id": self.chat_id,
             "text": self.text,
             "buttons": [b.to_dict() for b in self.buttons],
+            # F-01: мок-адаптер и web-симулятор рисуют вложение по описанию, без байтов
+            "attachment": self.attachment.to_dict() if self.attachment else None,
         }
 
 

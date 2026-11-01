@@ -10,9 +10,32 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 from bot_fork.adapters.base import EventHandler, PlatformAdapter
 from bot_fork.exceptions import PlatformError
-from bot_fork.models import Button, IncomingEvent, OutgoingMessage
+from bot_fork.models import Attachment, Button, IncomingEvent, OutgoingMessage
 
 logger = logging.getLogger("bot_fork.adapters.telegram")
+
+# F-21: маппинг полей Telegram-сообщения на нормализованный content_type
+_TG_CONTENT_KINDS = ("photo", "sticker", "video", "voice", "audio", "document", "animation")
+
+
+def detect_content_type(raw_message: Any) -> Optional[str]:
+    """
+    F-21: определяет тип контента входящего сообщения (text|photo|sticker|voice|video|document|other).
+    Работает и с dict (raw update), и с объектом aiogram.types.Message.
+    """
+    def _present(name: str) -> bool:
+        if isinstance(raw_message, dict):
+            return bool(raw_message.get(name))
+        return bool(getattr(raw_message, name, None))
+
+    if _present("text"):
+        return "text"
+    for name in _TG_CONTENT_KINDS:
+        if _present(name):
+            return "video" if name == "animation" else name
+    if _present("sticker"):
+        return "sticker"
+    return "other"
 
 
 class TelegramAdapter(PlatformAdapter):
@@ -74,6 +97,7 @@ class TelegramAdapter(PlatformAdapter):
                 text=text,
                 payload=None,
                 event_id=str(raw_event.get("update_id", "")),
+                content_type=detect_content_type(msg),
             )
 
         # 1. Direct CallbackQuery object (e.g. from @dp.callback_query()) - has 'data'
@@ -120,6 +144,7 @@ class TelegramAdapter(PlatformAdapter):
                 text=text,
                 payload=None,
                 event_id=str(getattr(raw_event, "message_id", "")),
+                content_type=detect_content_type(raw_event),
             )
 
         # 4. Update object containing message
@@ -134,6 +159,7 @@ class TelegramAdapter(PlatformAdapter):
                 text=getattr(msg, "text", None),
                 payload=None,
                 event_id=str(getattr(raw_event, "update_id", getattr(msg, "message_id", ""))),
+                content_type=detect_content_type(msg),
             )
 
         raise PlatformError(f"Unsupported Telegram event structure: {type(raw_event)}")
@@ -147,6 +173,10 @@ class TelegramAdapter(PlatformAdapter):
             "chat_id": message.chat_id,
             "text": message.text,
         }
+
+        # F-01: вложение — описание в payload для мока/отладки, байты уходят отдельным вызовом API
+        if message.attachment is not None:
+            payload["attachment"] = message.attachment.to_dict()
 
         if message.buttons:
             # Inline keyboard: up to 4 buttons in a clean vertical or grid layout
@@ -186,11 +216,33 @@ class TelegramAdapter(PlatformAdapter):
                     ]
                     reply_markup = InlineKeyboardMarkup(inline_keyboard=buttons_list)
 
-                await bot.send_message(
-                    chat_id=int(message.chat_id),
-                    text=message.text,
-                    reply_markup=reply_markup,
-                )
+                if message.attachment is not None:
+                    # F-01: текст уходит подписью (caption) к медиа
+                    import io
+
+                    file_obj = io.BytesIO(message.attachment.data)
+                    file_obj.name = message.attachment.filename
+                    caption = message.attachment.caption or message.text
+                    if message.attachment.kind == "photo":
+                        await bot.send_photo(
+                            chat_id=int(message.chat_id),
+                            photo=file_obj,
+                            caption=caption,
+                            reply_markup=reply_markup,
+                        )
+                    else:
+                        await bot.send_document(
+                            chat_id=int(message.chat_id),
+                            document=file_obj,
+                            caption=caption,
+                            reply_markup=reply_markup,
+                        )
+                else:
+                    await bot.send_message(
+                        chat_id=int(message.chat_id),
+                        text=message.text,
+                        reply_markup=reply_markup,
+                    )
             except ImportError:
                 logger.info(
                     "aiogram not installed; message formatted and logged in standalone mode: %s",

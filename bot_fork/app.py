@@ -16,7 +16,7 @@ from bot_fork.adapters.base import PlatformAdapter
 from bot_fork.adapters.telegram import TelegramAdapter
 from bot_fork.adapters.vk import VKAdapter
 from bot_fork.exceptions import ConfigError
-from bot_fork.models import Button, ErrorInfo, HandlerResult, IncomingEvent, OutgoingMessage
+from bot_fork.models import Attachment, Button, ErrorInfo, HandlerResult, IncomingEvent, OutgoingMessage
 from bot_fork.router import DialogRouter, SceneRegistry
 from bot_fork.scene import SceneDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
@@ -175,14 +175,26 @@ class BotForkApp:
         chat_id: str,
         text: str,
         buttons: Tuple[Button, ...] = (),
+        attachment: Optional[Attachment] = None,
     ) -> None:
         """
         F-11: исходящая отправка без входящего события (напоминания, отчёты, эскалации).
+        F-01: необязательное вложение (график botgraph — фото, выгрузка — документ).
         Сообщение форматируется текущим адаптером платформы и уходит напрямую.
         """
-        message = OutgoingMessage(chat_id=str(chat_id), text=text, buttons=tuple(buttons))
+        message = OutgoingMessage(
+            chat_id=str(chat_id),
+            text=text,
+            buttons=tuple(buttons),
+            attachment=attachment,
+        )
         await self.adapter.send(message)
-        logger.info("Proactive send | platform=%s | len=%d", self.platform, len(text))
+        logger.info(
+            "Proactive send | platform=%s | len=%d | attachment=%s",
+            self.platform,
+            len(text),
+            "yes" if attachment else "no",
+        )
 
     async def _run_async(self) -> None:
         """Internal asynchronous runner for adapter polling."""

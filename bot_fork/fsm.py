@@ -167,24 +167,26 @@ class FSMEngine:
             value_to_save = trimmed
 
         elif step.input_type == "choice":
+            # F-29: клавиатура может быть функцией от сессии — матчим по живой клавиатуре.
+            step_buttons = await step.resolve_buttons(session)
             # For choice: value comes from payload or fallback text matching button value or label
             chosen_val = event.payload
             if not chosen_val and event.text:
                 # Fallback: check if text matches button value or label
                 match = next(
-                    (b.value for b in step.buttons if b.value == event.text or b.label.lower() == event.text.lower()),
+                    (b.value for b in step_buttons if b.value == event.text or b.label.lower() == event.text.lower()),
                     None,
                 )
                 chosen_val = match
 
-            allowed_values = {b.value for b in step.buttons}
+            allowed_values = {b.value for b in step_buttons}
             if not chosen_val or chosen_val not in allowed_values:
                 return HandlerResult(
                     messages=(
                         OutgoingMessage(
                             chat_id=event.chat_id,
                             text=apply_branding("Эта кнопка уже недействительна. Повторите выбор."),
-                            buttons=step.buttons,
+                            buttons=step_buttons,
                         ),
                     ),
                     session_after=session,
@@ -249,7 +251,7 @@ class FSMEngine:
                         OutgoingMessage(
                             chat_id=event.chat_id,
                             text=apply_branding(action_res),
-                            buttons=step.buttons,
+                            buttons=await step.resolve_buttons(session),
                         ),
                     ),
                     session_after=session,
@@ -298,8 +300,8 @@ class FSMEngine:
             messages.append(
                 OutgoingMessage(
                     chat_id=event.chat_id,
-                    text=apply_branding(cur.render_prompt(new_session)),
-                    buttons=cur.buttons,
+                    text=apply_branding(await cur.arender_prompt(new_session)),
+                    buttons=await cur.resolve_buttons(new_session),
                 )
             )
             if cur.input_type != "info":

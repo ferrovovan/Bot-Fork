@@ -227,7 +227,7 @@ class DialogRouter:
             prefix = f"{scene.restart_text or 'Диалог начат заново.'}\n\n"
         else:
             prefix = ""
-        prompt_text = prefix + start_step.render_prompt(new_session)
+        prompt_text = prefix + await start_step.arender_prompt(new_session)
 
         await self.storage.set(new_session)
         return HandlerResult(
@@ -235,7 +235,7 @@ class DialogRouter:
                 OutgoingMessage(
                     chat_id=chat_id,
                     text=apply_branding(prompt_text),
-                    buttons=start_step.buttons,
+                    buttons=await start_step.resolve_buttons(new_session),
                 ),
             ),
             session_after=new_session,

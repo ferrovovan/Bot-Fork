@@ -20,6 +20,10 @@ PromptFunc = Callable[..., str]
 # Принимает (значение, словарь данных сессии — можно дополнять), может быть async.
 # Возврат строки трактуется как причина отказа: шаг не завершается, данные не сохраняются.
 ActionFunc = Callable[..., Any]
+# F-29: клавиатура как функция от сессии (sync или async) — развилки меню по
+# состоянию игрока («Анкета» vs «Пройти заново»). Валидируется при резолве
+# идентично статической: ≤4 кнопок, уникальные values.
+ButtonsFunc = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -31,7 +35,7 @@ class StepDefinition:
     id: str
     prompt: Union[str, PromptFunc]  # F-05: str или Callable[[UserSession], str]
     input_type: str = "text"  # "text" | "choice"
-    buttons: Tuple[Button, ...] = ()
+    buttons: Union[Tuple[Button, ...], ButtonsFunc] = ()  # F-29: или Callable[[UserSession], Sequence[Button]]
     validator: Optional[ValidatorFunc] = None
     transitions: Dict[str, str] = field(default_factory=dict)
     next_step_id: Optional[str] = None
@@ -45,30 +49,69 @@ class StepDefinition:
             raise ConfigError(f"Step '{self.id}' prompt must be a non-empty string or a callable")
         if self.input_type not in ("text", "choice", "info"):
             raise ConfigError(f"Step '{self.id}' input_type must be 'text', 'choice' or 'info', got '{self.input_type}'")
-        if len(self.buttons) > 4:
-            raise ConfigError(f"Step '{self.id}' cannot have more than 4 buttons (got {len(self.buttons)})")
-        if self.input_type == "info" and self.buttons:
-            raise ConfigError(f"Step '{self.id}' has input_type='info' but buttons were provided (инфо-шаг не жмёт кнопок)")
-        if self.input_type == "choice" and not self.buttons:
-            raise ConfigError(f"Step '{self.id}' has input_type='choice' but no buttons were provided")
+        if callable(self.buttons):
+            # F-29: клавиатура-функция проверяется при резолве (≤4, уникальность);
+            # инфо-шагу она не положена в любом виде.
+            if self.input_type == "info":
+                raise ConfigError(f"Step '{self.id}' has input_type='info' but buttons were provided (инфо-шаг не жмёт кнопок)")
+        else:
+            if len(self.buttons) > 4:
+                raise ConfigError(f"Step '{self.id}' cannot have more than 4 buttons (got {len(self.buttons)})")
+            if self.input_type == "info" and self.buttons:
+                raise ConfigError(f"Step '{self.id}' has input_type='info' but buttons were provided (инфо-шаг не жмёт кнопок)")
+            if self.input_type == "choice" and not self.buttons:
+                raise ConfigError(f"Step '{self.id}' has input_type='choice' but no buttons were provided")
 
-        values = [b.value for b in self.buttons]
-        if len(values) != len(set(values)):
-            raise ConfigError(f"Step '{self.id}' has duplicate button values: {values}")
+            values = [b.value for b in self.buttons]
+            if len(values) != len(set(values)):
+                raise ConfigError(f"Step '{self.id}' has duplicate button values: {values}")
 
     def render_prompt(self, session: Any = None) -> str:
         """F-05: статический prompt или текст, вычисленный из данных сессии."""
         if not callable(self.prompt):
             return self.prompt
+        return self._finish_prompt(self._call_with_session(self.prompt, session))
+
+    async def arender_prompt(self, session: Any = None) -> str:
+        """F-29: как render_prompt, но prompt'у разрешено быть async (репозиторий продукта)."""
+        if not callable(self.prompt):
+            return self.prompt
+        result = self._call_with_session(self.prompt, session)
+        if inspect.isawaitable(result):
+            try:
+                result = await result
+            except Exception as e:  # продуктная async-ошибка не роняет роутер
+                raise ConfigError(f"Step '{self.id}' dynamic prompt raised {e!r}") from e
+        return self._finish_prompt(result)
+
+    async def resolve_buttons(self, session: Any = None) -> Tuple[Button, ...]:
+        """F-29: статическая клавиатура или клавиатура-функция от сессии (sync/async)."""
+        if not callable(self.buttons):
+            return self.buttons
         try:
-            params = inspect.signature(self.prompt).parameters
-            takes_arg = any(
-                p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-                for p in params.values()
-            )
-            result = self.prompt(session) if takes_arg else self.prompt()
+            result = self._call_with_session(self.buttons, session)
+            if inspect.isawaitable(result):
+                result = await result
+        except ConfigError:
+            raise
+        except Exception as e:
+            raise ConfigError(f"Step '{self.id}' dynamic buttons raised {e!r}") from e
+        if not isinstance(result, (tuple, list)):
+            raise ConfigError(f"Step '{self.id}' dynamic buttons must return a sequence of Button, got {result!r}")
+        return ButtonBuilder.keyboard(*result)  # те же лимиты, что у статической
+
+    def _call_with_session(self, fn, session: Any):
+        params = inspect.signature(fn).parameters
+        takes_arg = any(
+            p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+            for p in params.values()
+        )
+        try:
+            return fn(session) if takes_arg else fn()
         except Exception as e:  # исключение продукта не должно ронять роутер
-            raise ConfigError(f"Step '{self.id}' dynamic prompt raised {e!r}") from e
+            raise ConfigError(f"Step '{self.id}' dynamic callable raised {e!r}") from e
+
+    def _finish_prompt(self, result: Any) -> str:
         if not isinstance(result, str) or not result:
             raise ConfigError(f"Step '{self.id}' dynamic prompt must return a non-empty string")
         return result
@@ -135,7 +178,7 @@ class Step:
         complete: bool = False,
         action: Optional[ActionFunc] = None,
     ) -> StepDefinition:
-        btn_tuple = ButtonBuilder.keyboard(*buttons)
+        btn_tuple = buttons if callable(buttons) else ButtonBuilder.keyboard(*buttons)
         trans = dict(transitions) if transitions else {}
         return StepDefinition(
             id=id,
@@ -207,7 +250,7 @@ class SceneDefinition:
                         f"Step '{s.id}' transition for '{val}' points to non-existent step '{target_id}'"
                     )
 
-            if s.input_type == "choice":
+            if s.input_type == "choice" and not callable(s.buttons):
                 # Ensure each button value either has an explicit transition or default next_step_id.
                 # F-23: launch-кнопки `scene:<id>` перехватывает DialogRouter до FSM — переход не нужен.
                 for btn in s.buttons:

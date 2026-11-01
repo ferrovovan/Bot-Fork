@@ -47,6 +47,7 @@ class BotForkApp:
         on_error: Optional[Callable[[Exception, IncomingEvent], object]] = None,
         on_system_event: Optional[Callable[[IncomingEvent], object]] = None,
         dedupe_capacity: int = 1024,
+        cancel_commands: Optional[Tuple[str, ...]] = None,
     ) -> None:
         norm_platform = (platform or "").strip().lower()
         if norm_platform not in ("telegram", "vk"):
@@ -64,6 +65,7 @@ class BotForkApp:
             registry=self.registry,
             storage=self.storage,
             on_system_event=self._dispatch_system_event,
+            cancel_commands=cancel_commands,  # F-31: «/отмена» для VK
         )
         # F-20: хук на внутренние ошибки; по умолчанию None — поведение как раньше (raise).
         self.on_error = on_error

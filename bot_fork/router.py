@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from bot_fork.exceptions import ConfigError
 from bot_fork.fsm import FSMEngine, apply_branding
 from bot_fork.models import (
@@ -72,10 +72,16 @@ class DialogRouter:
         storage: StateStorage,
         fsm_engine: Optional[FSMEngine] = None,
         on_system_event=None,
+        cancel_commands: Optional[Tuple[str, ...]] = None,
     ) -> None:
         self.registry = registry
         self.storage = storage
         self.fsm = fsm_engine or FSMEngine()
+        # F-31: отмена — системная команда, а в VK её печатают руками по-русски.
+        # Продукт задаёт свои алиасы («/отмена» для VK); по-прежнему всё lowercase.
+        self.cancel_commands = tuple(
+            c.lower() for c in (cancel_commands or ("/cancel",))
+        )
         # F-13: callback(event) -> None | Awaitable, куда роутер отдаёт служебные события
         # («игрок присоединился», «бота добавили в чат»). Диалог на них не запускается.
         self.on_system_event = on_system_event
@@ -96,7 +102,8 @@ class DialogRouter:
 
         # Step 1: Handle /cancel (system command, before any scene logic).
         # F-06: отменяется «верхний» диалог — сначала system-слот, иначе user.
-        if command_token == "/cancel":
+        # F-31: набор отмен задаёт продукт (в VK печатают «/отмена»).
+        if command_token in self.cancel_commands:
             for lane in ("system", "user"):
                 key = event.session_key.with_lane(lane)
                 existing_session = await self.storage.get(key)

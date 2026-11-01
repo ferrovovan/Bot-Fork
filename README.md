@@ -1,12 +1,16 @@
-# Bot Fork (Версия 1.0)
+# Bot Fork
 
 **Встраиваемая Python-библиотека прототипирования диалоговых сцен для Telegram и ВКонтакте.**
+
+[![Build Wheel & CI](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml/badge.svg)](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml)
+[![Release](https://img.shields.io/github/v/release/ferrovovan/Bot-Fork?include_prereleases&label=release)](https://github.com/ferrovovan/Bot-Fork/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Разработчик описывает диалоговую логику (сцены, шаги, валидаторы, ветвления и кнопки) один раз на чистом Python без платформенных зависимостей, и запускает бота в **Telegram** или **ВКонтакте**, меняя только конфигурацию окружения.
 
 ---
 
-## ⚡ Особенности архитектуры v1.0
+## ⚡ Особенности архитектуры
 
 - **Единый диалоговый FSM-контракт**: `Scene`, `Step`, `Button`, `DialogRouter`, `FSMEngine`.
 - **Изоляция ядра (NFR-03)**: Ядро не зависит от `aiogram` и `vkbottle`. Платформенные классы не попадают в сценарии.
@@ -20,72 +24,16 @@
 
 - **Минорную цифру задирать нельзя.** Небольшие прибавки API (новый optional-параметр,
   новый тип возврата действия, мелкий хук) выпускаются **патчем внутри текущей минорной
-  серии** (1.11.1, 1.11.2, …) и фиксируются в «Хронике» строкой внутри той же минорной
+  серии** (1.11.1, 1.11.2, …) и фиксируются строкой в истории внутри той же минорной
   ветки. Новая минорная версия — только за крупный связный пакет изменений или
   обратно несовместимую правку, по-настоящему меняющую контракт библиотеки.
 - Патч — любой багфикс и каждая мелкая прибавка API.
 
-### Хроника расширений (fork roadmap)
+### История изменений
 
-- **v1.1** — прикладной рантайм: `app.send` (F-11), async-валидаторы и `Step.action` (F-04),
-  `SqlStateStorage` (F-02/03), дедупликация событий (F-18), хук `on_error` (F-20), брендинг-флаг (F-16).
-- **v1.2** — вложения `Attachment` в `OutgoingMessage` (F-01, TG photo/doc, VK upload), `content_type`
-  события (F-21).
-- **v1.3** — запуск сцены из кнопки: payload `scene:<id>` (F-23); контекст сессии в `action(value, data, session)` (F-04).
-- **v1.4** — групповые чаты (WP3): `chat_type` и `event_type/system_kind` в `IncomingEvent` (F-13),
-  хук `on_system_event` (служебные события не будят диалог), операции адаптеров
-  `create_chat`/`add_member`/`remove_member`/`get_invite_link` (F-13) и `send_ex`/`edit_message` (F-19).
-  VK умеет всё; Telegram — план Б: `create_chat`/`add_member` бросают `PlatformOperationNotSupported`
-  (чат создаёт админ, бот раздаёт `get_invite_link`).
-- **v1.5** — полосы диалога и программный вход (WP4, готовим Фазу 2): `SessionKey.lane`
-  («user»|«system»), `SceneDefinition.lane` — подтверждение слота перехватывает чат, анкета
-  ждёт в своём слоте и продолжается с того же шага (F-06); `app.start_scene(scene_id,
-  user_id, chat_id, data)` — запуск сцены из кода для jobs/outbox (F-22); схема
-  `SqlStateStorage` v2 (PK с lane) с авто-миграцией старых баз.
-- **v1.6** — динамические prompt'ы (F-05): `Step(..., prompt=...)` принимает `str` или
-  функцию `Callable[[UserSession], str]` — карточка слота и регламент чата рендерятся из
-  данных сессии в момент показа (старт сцены и каждый переход). Статический контракт
-  сохранён: обычная строка ведёт себя как раньше.
-- **v1.11.5** — info-шаг первым шагом сцены авто-завершается (F-33):
-  `begin_scene` прогоняет стартовый info-цепочку F-25 (документ/правила из
-  одного info больше не паркуют сессию и не глотают следующее сообщение);
-  generic-отчёт завершения переименован из «Анкета успешно завершена» в
-  «Сценарий завершён» — сцены без on_complete бывают не анкетами.
-- **v1.11.4** — отмена подсказывает живые команды (F-32): «Заново — <команда
-  сцены>» вместо зашитого демо-«/info»; `SceneRegistry.commands_for(...)`.
-- **v1.11.3** — `cancel_commands` (F-31): набор команд отмены задаёт продукт
-  (VK печатает «/отмена»); по умолчанию прежнее `("/cancel",)`.
-- **v1.11.2** — текстовый побег с choice-шага зовёт обратно (F-30): новый код
-  `NEED_BUTTON` и тёплый текст вместо «кнопка недействительна» (он остался только
-  для впрямь устаревших payload'ов).
-- **v1.11.1** — динамическая клавиатура (F-29): `buttons` шага — функция от сессии
-  (sync/async), резолвится при отрисовке и при матчинге нажатия; async prompt.
-- **v1.11.0** — `Reject(text, buttons)` (F-28): отказ действия может нести свои кнопки
-  (обычно launch `scene:<id>`) — отказ «команды нет» предлагает «📝 Анкета», а не
-  тупик из кнопок текущего шага. Строковый отказ не изменился.
-- **v1.10.0** — `SceneDefinition.restart_text` (F-27): шапка перезапуска сцены больше
-  не вшита в ядро. Сцены, которым нужен предупреждающий заголовок («Анкета начата
-  заново.»), задают его сами; `""` — молчаливый перезапуск (меню-сцены), `None` —
-  нейтральное «Диалог начат заново.»
-- **v1.9.1** — живучесть TG-polling: сетевой отказ на старте (getMe через падающий
-  прокси) не роняет процесс, переподключение через 5 с (F-26).
-- **v1.9** — `Step.info`: инфо-шаг («О проекте», «Готово»), который печатает и
-  идёт дальше сам; кнопка, прилетевшая в текстовый шаг, отвечает честным
-  INVALID_BUTTON вместо «Ответ не должен быть пустым» (баг живой приёмки).
-- **v1.8.1** — фикс DSN: `SqlStateStorage` понимал сырой путь, но падал на
-  SQLAlchemy-стиле `sqlite:///dev.db` / `sqlite+aiosqlite://` (жизнь показала на
-  первом живом запуске бота продукта).
-- **v1.8** — переименование чатов (F-24): `rename_chat(chat_id, title)` в адаптерах
-  (VK `messages.editChat`, TG `setChatTitle`), по умолчанию `PlatformOperationNotSupported` —
-  нужно сцене `team_name` (03 §6), чтобы бот сам называл чат команды.
-- **v1.7** — завершение сцены без хардкода (F-09): `SceneDefinition.on_complete` вызывается
-  вместо встроенного отчёта (текст / список текстов / `OutgoingMessage` / `None` — молча;
-  async тоже ждём; исключение — фолбэк на generic-отчёт). Спец-код демо-сцены `info`
-  удалён из ядра, её текст переехал в саму сцену — библиотека больше не знает бизнес-текстов.
-
-[![Build Wheel & CI](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml/badge.svg)](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml)
-[![Release](https://img.shields.io/github/v/release/ferrovovan/Bot-Fork?include_prereleases&label=release)](https://github.com/ferrovovan/Bot-Fork/releases)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+Текущая версия — **v1.11.5**. Полная хроника расширений от базовой v1.0 до текущего
+релиза — в [docs/History.md](docs/History.md). Номера **F-xx** — дыры движка из
+рабочего листа продукта («Недостающий функционал в Bot Fork.md»).
 
 ---
 
@@ -112,17 +60,15 @@ pip install 'bot-fork[all,dev] @ git+https://github.com/ferrovovan/Bot-Fork'
 
 ### Установка готового `.whl` пакета
 
-Готовые сборки `.whl` публикуются в [Releases](https://github.com/ferrovovan/Bot-Fork/releases):
+Готовые сборки `.whl` публикуются в [Releases](https://github.com/ferrovovan/Bot-Fork/releases)
+(имя файла содержит номер версии — актуальный номер смотрите там же):
 
 ```bash
-# Установка прямо по ссылке на последний релиз:
-pip install https://github.com/ferrovovan/Bot-Fork/releases/latest/download/bot_fork-1.0.0-py3-none-any.whl
-
-# Или установка предварительно скачанного файла .whl:
-pip install bot_fork-1.0.0-py3-none-any.whl
+# Установка предварительно скачанного файла .whl:
+pip install bot_fork-<версия>-py3-none-any.whl
 
 # Установка скачанного .whl вместе с поддержкой Telegram:
-pip install "bot_fork-1.0.0-py3-none-any.whl[telegram]"
+pip install "bot_fork-<версия>-py3-none-any.whl[telegram]"
 ```
 
 ---
@@ -228,7 +174,8 @@ LOG_LEVEL=INFO
 
 ## 🧪 Тестирование
 
-Запуск полного набора unit- и интеграционных тестов (T1–T15, FR-01–FR-07, NFR-01–NFR-06):
+Запуск полного набора unit- и интеграционных тестов (T1–T15, FR-01–FR-07, NFR-01–NFR-06,
+расширения v1.1–v1.11; сейчас 154 теста + NFR-бенчмарк):
 
 ```bash
 python3 tests/test_all.py
@@ -241,10 +188,10 @@ python3 tests/test_all.py
 ## ⚙️ Сборка `.whl` пакета и CI/CD
 
 В проекте настроен автоматический CI/CD pipeline в GitHub Actions (`.github/workflows/build-wheel.yml`):
-- **Тестирование:** прогон 46 unit- и интеграционных тестов на версиях Python 3.10, 3.11, 3.12, 3.13.
+- **Тестирование:** прогон полного набора unit- и интеграционных тестов на версиях Python 3.10, 3.11, 3.12, 3.13.
 - **Сборка:** компиляция чистого `.whl` (Wheel) и архива исходников `.tar.gz` (`python -m build`).
 - **Верификация:** проверка метаданных пакета утилитой `twine check --strict` и тестовая установка.
-- **Публикация:** при создании тега `v*` (например, `v1.0.0`) готовый `.whl` файл автоматически прикрепляется к GitHub Releases.
+- **Публикация:** при создании тега `v*` (например, `v1.11.5`) готовый `.whl` файл автоматически прикрепляется к GitHub Releases.
 
 ### Локальная сборка wheel:
 
@@ -255,9 +202,9 @@ pip install build twine
 # 2. Соберите wheel и sdist
 python3 -m build
 
-# 3. Готовые файлы появятся в директории dist/:
-#    dist/bot_fork-1.0.0-py3-none-any.whl
-#    dist/bot_fork-1.0.0.tar.gz
+# 3. Готовые файлы появятся в директории dist/ (номер версии — из pyproject.toml):
+#    dist/bot_fork-<версия>-py3-none-any.whl
+#    dist/bot_fork-<версия>.tar.gz
 
 # Проверка корректности пакета:
 twine check dist/*

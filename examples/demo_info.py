@@ -44,6 +44,23 @@ def validate_goal(text: str):
     return True, ""
 
 
+def _completion_text(session) -> str:
+    """F-09: текст завершения живёт в сцене, не в ядре библиотеки."""
+    data = session.data
+    role = data.get("role", "—")
+    role_label = {
+        "developer": "Разработчик",
+        "freelancer": "Фрилансер",
+        "other": "Другое",
+    }.get(role, role)
+    return (
+        "Спасибо за ответы! Итоги анкеты:\n"
+        f"• Имя: {data.get('name', '—')}\n"
+        f"• Роль: {role_label}\n"
+        f"• Цель проекта: {data.get('goal', '—')}"
+    )
+
+
 # Universal dialogue scene definition
 info_scene = Scene(
     id="info",
@@ -72,6 +89,7 @@ info_scene = Scene(
             complete=True,
         ),
     ),
+    on_complete=_completion_text,
 )
 
 

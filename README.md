@@ -37,6 +37,10 @@
   функцию `Callable[[UserSession], str]` — карточка слота и регламент чата рендерятся из
   данных сессии в момент показа (старт сцены и каждый переход). Статический контракт
   сохранён: обычная строка ведёт себя как раньше.
+- **v1.7** — завершение сцены без хардкода (F-09): `SceneDefinition.on_complete` вызывается
+  вместо встроенного отчёта (текст / список текстов / `OutgoingMessage` / `None` — молча;
+  async тоже ждём; исключение — фолбэк на generic-отчёт). Спец-код демо-сцены `info`
+  удалён из ядра, её текст переехал в саму сцену — библиотека больше не знает бизнес-текстов.
 
 [![Build Wheel & CI](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml/badge.svg)](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml)
 [![Release](https://img.shields.io/github/v/release/ferrovovan/Bot-Fork?include_prereleases&label=release)](https://github.com/ferrovovan/Bot-Fork/releases)

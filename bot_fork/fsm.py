@@ -6,9 +6,12 @@ Validates input, transitions states, accumulates survey data, and appends mandat
 from __future__ import annotations
 
 import inspect
+import logging
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from bot_fork.exceptions import ConfigError
+
+logger = logging.getLogger("bot_fork")
 from bot_fork.models import (
     Button,
     ErrorInfo,
@@ -230,15 +233,10 @@ class FSMEngine:
 
         # 4. Check if complete
         if step.complete or not next_step_id:
-            # Build completion report
-            report_text = self._build_completion_report(scene, new_session.data)
+            # F-09: сцена сама решает, чем завершаться (текст/сообщения/тишина).
+            messages = await self._completion_messages(scene, new_session, event.chat_id)
             return HandlerResult(
-                messages=(
-                    OutgoingMessage(
-                        chat_id=event.chat_id,
-                        text=apply_branding(report_text),
-                    ),
-                ),
+                messages=tuple(messages),
                 session_after=None,
                 clear_session=True,
                 error=None,
@@ -272,28 +270,36 @@ class FSMEngine:
             error=None,
         )
 
-    def _build_completion_report(self, scene: SceneDefinition, data: Dict[str, str]) -> str:
-        """
-        Builds the final survey report.
-        For the standard /info demo scene: formats name, role, goal cleanly.
-        """
-        if scene.id == "info":
-            name = data.get("name", "—")
-            role = data.get("role", "—")
-            role_display_map = {
-                "developer": "Разработчик",
-                "freelancer": "Фрилансер",
-                "other": "Другое",
-            }
-            role_label = role_display_map.get(role, role)
-            goal = data.get("goal", "—")
-            return (
-                "Спасибо за ответы! Итоги анкеты:\n"
-                f"• Имя: {name}\n"
-                f"• Роль: {role_label}\n"
-                f"• Цель проекта: {goal}"
-            )
+    async def _completion_messages(
+        self, scene: SceneDefinition, session: Any, chat_id: str
+    ) -> List[OutgoingMessage]:
+        """F-09: on_complete сцены (async ok) → сообщения; ошибка — generic-отчёт, молчание — допустимо."""
+        if scene.on_complete is not None:
+            try:
+                result = scene.on_complete(session)
+                if inspect.isawaitable(result):
+                    result = await result
+            except Exception:
+                logger.exception("Scene '%s' on_complete crashed; falling back to generic report", scene.id)
+            else:
+                if result is None:
+                    return []
+                items = result if isinstance(result, (list, tuple)) else [result]
+                messages: List[OutgoingMessage] = []
+                for item in items:
+                    if isinstance(item, OutgoingMessage):
+                        messages.append(item if item.chat_id else OutgoingMessage(chat_id=chat_id, text=item.text, buttons=item.buttons))
+                    elif isinstance(item, str) and item:
+                        messages.append(OutgoingMessage(chat_id=chat_id, text=apply_branding(item)))
+                    else:
+                        raise ConfigError(
+                            f"Scene '{scene.id}' on_complete returned unsupported item {item!r}"
+                        )
+                return messages
+        return [OutgoingMessage(chat_id=chat_id, text=apply_branding(self._build_completion_report(scene, session.data)))]
 
+    def _build_completion_report(self, scene: SceneDefinition, data: Dict[str, str]) -> str:
+        """Generic-отчёт для сцен без on_complete (F-09: демо-тексты живут в самих сценах)."""
         # Generic summary
         lines = ["Анкета успешно завершена. Ваши ответы:"]
         for k, v in data.items():

@@ -133,6 +133,10 @@ class SceneDefinition:
     start_step_id: str
     steps: Tuple[StepDefinition, ...]
     lane: str = "user"
+    # F-09: чем сцена отвечает на завершение. Вызывается с UserSession;
+    # возврат: None (тихо) | str | list[str] | list[OutgoingMessage] | list смешанно.
+    # Без него — прежний generic-отчёт. Ядро больше не знает текстов конкретных сцен.
+    on_complete: Optional[Callable[..., Any]] = None
     _step_map: Dict[str, StepDefinition] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -190,6 +194,8 @@ def Scene(
     entry_commands: Sequence[str] = (),
     steps: Sequence[StepDefinition] = (),
     start_step_id: Optional[str] = None,
+    lane: str = "user",
+    on_complete: Optional[Callable[..., Any]] = None,
 ) -> SceneDefinition:
     """
     Factory function matching MVP target API specification:
@@ -207,4 +213,6 @@ def Scene(
         entry_commands=norm_commands,
         start_step_id=start_id,
         steps=step_tuple,
+        lane=lane,
+        on_complete=on_complete,
     )

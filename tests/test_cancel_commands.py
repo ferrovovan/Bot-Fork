@@ -64,3 +64,33 @@ def BotForkAppSafe(platform, **kw):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCancelHint(unittest.IsolatedAsyncioTestCase):
+    """F-32: подсказка после отмены — живые команды реестра, не демо-/info."""
+
+    async def test_hint_names_real_command(self):
+        registry = SceneRegistry()
+        registry.register(Scene(id="anketa", entry_commands=("/анкета", "/reg"),
+                                steps=(Step.text("q", "?", complete=True),)))
+        router = DialogRouter(registry=registry, storage=MemoryStateStorage())
+        await router.route(IncomingEvent(platform="vk", user_id="3001", chat_id="3001",
+                                         text="/анкета"))
+        r = await router.route(IncomingEvent(platform="vk", user_id="3001", chat_id="3001",
+                                             text="/cancel"))
+        self.assertIn("Заново — /анкета.", r.messages[0].text)
+        self.assertNotIn("/info", r.messages[0].text)
+
+    async def test_scene_without_commands_no_phantom_hint(self):
+        registry = SceneRegistry()
+        registry.register(Scene(id="hidden", entry_commands=(),
+                                steps=(Step.text("q", "?", complete=True),)))
+        router = DialogRouter(registry=registry, storage=MemoryStateStorage())
+        from bot_fork.models import SessionKey
+        scene = registry.get_scene("hidden")
+        key = SessionKey(platform="vk", user_id="3002", chat_id="3002").with_lane("user")
+        await router.begin_scene(scene, key, "3002", had_session=False)
+        r = await router.route(IncomingEvent(platform="vk", user_id="3002", chat_id="3002",
+                                             text="/cancel"))
+        self.assertIn("Диалог отменён", r.messages[0].text)
+        self.assertNotIn("/info", r.messages[0].text)

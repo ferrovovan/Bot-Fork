@@ -60,6 +60,11 @@ class SceneRegistry:
     def list_entry_commands(self) -> List[str]:
         return sorted(list(self._command_map.keys()))
 
+    def commands_for(self, scene_id: str) -> Tuple[str, ...]:
+        """Команды входа конкретной сцены (в порядке объявления). F-32."""
+        scene = self._scenes.get(scene_id)
+        return tuple(scene.entry_commands) if scene else ()
+
 
 class DialogRouter:
     """
@@ -109,11 +114,19 @@ class DialogRouter:
                 existing_session = await self.storage.get(key)
                 if existing_session is not None:
                     await self.storage.clear(key)
+                    # F-32: подсказка «как заново» — живые команды реестра,
+                    # а не демо-"/info", которого в продукте может и не быть
+                    cmds = self.registry.commands_for(existing_session.scene_id)
+                    if cmds:
+                        hint = f"Заново — {cmds[0]}."
+                    else:
+                        avail = ", ".join(self.registry.list_entry_commands())
+                        hint = f"Доступно: {avail}." if avail else ""
                     return HandlerResult(
                         messages=(
                             OutgoingMessage(
                                 chat_id=event.chat_id,
-                                text=apply_branding("Диалог отменён. Для нового запуска отправьте /info."),
+                                text=apply_branding(f"Диалог отменён. {hint}".strip()),
                             ),
                         ),
                         session_after=None,

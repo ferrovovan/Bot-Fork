@@ -34,7 +34,7 @@ from bot_fork.scene import Scene, SceneDefinition, Step, StepDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
 from bot_fork.sql_storage import SqlStateStorage
 
-__version__ = "1.11.3"
+__version__ = "1.11.4"
 __all__ = [
     "BotForkApp",
     "Scene",

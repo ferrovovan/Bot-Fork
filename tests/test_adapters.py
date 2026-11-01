@@ -46,6 +46,53 @@ class TestAdapters(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.payload, "developer")
         self.assertIsNone(event.text)
 
+    def test_telegram_direct_message_object_normalization(self):
+        adapter = TelegramAdapter()
+
+        class MockChat:
+            id = 54321
+
+        class MockUser:
+            id = 54321
+
+        class MockMessage:
+            chat = MockChat()
+            from_user = MockUser()
+            text = "  /info  "
+            message_id = 999
+
+        event = adapter.normalize_event(MockMessage())
+        self.assertEqual(event.platform, "telegram")
+        self.assertEqual(event.user_id, "54321")
+        self.assertEqual(event.chat_id, "54321")
+        self.assertEqual(event.text, "/info")
+        self.assertIsNone(event.payload)
+
+    def test_telegram_direct_callback_query_object_normalization(self):
+        adapter = TelegramAdapter()
+
+        class MockChat:
+            id = 54321
+
+        class MockMsg:
+            chat = MockChat()
+
+        class MockUser:
+            id = 54321
+
+        class MockCallbackQuery:
+            from_user = MockUser()
+            message = MockMsg()
+            data = "freelancer"
+            id = "cb-123"
+
+        event = adapter.normalize_event(MockCallbackQuery())
+        self.assertEqual(event.platform, "telegram")
+        self.assertEqual(event.user_id, "54321")
+        self.assertEqual(event.chat_id, "54321")
+        self.assertEqual(event.payload, "freelancer")
+        self.assertIsNone(event.text)
+
     def test_telegram_outgoing_formatting(self):
         adapter = TelegramAdapter()
         msg = OutgoingMessage(
@@ -121,6 +168,31 @@ class TestAdapters(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0]["text"], "Hello mock")
         self.assertEqual(len(adapter.sent_messages), 1)
+
+    async def test_no_duplicate_send_on_event_handling(self):
+        sent = []
+        adapter = TelegramAdapter(mock_sender=lambda p: sent.append(p))
+
+        from bot_fork.app import BotForkApp
+        from examples.demo_info import info_scene
+
+        app = BotForkApp(platform="telegram", adapter=adapter)
+        app.register_scene(info_scene)
+
+        # Simulate incoming event processed through app
+        from bot_fork.models import IncomingEvent
+        event = IncomingEvent(platform="telegram", user_id="123", chat_id="123", text="/info")
+
+        result = await app.handle(event)
+        # In adapter polling, adapter sends result.messages once
+        for out_msg in result.messages:
+            await adapter.send(out_msg)
+
+        # Exactly 1 message sent for /info start
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(adapter.sent_messages), 1)
+        self.assertEqual(sent[0]["text"], "Как к вам обращаться?")
+        self.assertNotIn("Made with Bot Fork", sent[0]["text"])
 
 
 if __name__ == "__main__":

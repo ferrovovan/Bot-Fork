@@ -1,6 +1,22 @@
-.env
+# Python
+__pycache__/
+*.pyc
 venv/
 venv
-__pycache__/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
 
+# Секреты и локальное состояние
+.env
 .vkbottle
+
+# Веб-оболочка (web/)
+node_modules/
+web/dist/
+npm-debug.log*
+
+# Архивы и ОС-мусор
+*.zip
+.DS_Store

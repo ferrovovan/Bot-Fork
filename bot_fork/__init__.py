@@ -30,7 +30,7 @@ from bot_fork.router import DialogRouter, SceneRegistry
 from bot_fork.scene import Scene, SceneDefinition, Step, StepDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
 
-__version__ = "3.1.0"
+__version__ = "1.0.0"
 __all__ = [
     "BotForkApp",
     "Scene",

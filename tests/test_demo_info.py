@@ -28,7 +28,7 @@ class TestDemoInfo(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(res1.clear_session)
         self.assertEqual(res1.session_after.step_id, "name")
         self.assertIn("Как к вам обращаться?", res1.messages[0].text)
-        self.assertIn("Made with Bot Fork", res1.messages[0].text)
+        self.assertNotIn("Made with Bot Fork", res1.messages[0].text)
 
         # 2. Send name
         ev2 = IncomingEvent(platform=platform_name, user_id=user_id, chat_id=chat_id, text="Дмитрий")
@@ -60,7 +60,7 @@ class TestDemoInfo(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Имя: Дмитрий", report)
         self.assertIn("Роль: Разработчик", report)
         self.assertIn("Цель проекта: Прототип бота для хакатона", report)
-        self.assertIn("Made with Bot Fork", report)
+        self.assertNotIn("Made with Bot Fork", report)
 
         # Session should be completely cleared in storage
         cleared = await app.storage.get(ev1.session_key)

@@ -17,24 +17,21 @@ from bot_fork.models import (
 )
 from bot_fork.scene import SceneDefinition, StepDefinition
 
-BRANDING_SUFFIX = "\n\nMade with Bot Fork"
+BRANDING_SUFFIX = ""
 MAX_MESSAGE_LENGTH = 4096
 
 
 def apply_branding(text: str) -> str:
     """
-    Appends 'Made with Bot Fork' branding exactly once to visible text.
-    Enforces maximum limit of 4096 characters.
+    Validates message length limit (4096 characters).
+    Proprietary watermark suffix removed in version 1.0 (clean text).
     """
     clean_text = text.rstrip()
-    if clean_text.endswith("Made with Bot Fork"):
-        return clean_text
-    branded = clean_text + BRANDING_SUFFIX
-    if len(branded) > MAX_MESSAGE_LENGTH:
+    if len(clean_text) > MAX_MESSAGE_LENGTH:
         raise ConfigError(
-            f"Message with branding exceeds {MAX_MESSAGE_LENGTH} characters limit (len={len(branded)})"
+            f"Message exceeds {MAX_MESSAGE_LENGTH} characters limit (len={len(clean_text)})"
         )
-    return branded
+    return clean_text
 
 
 class FSMEngine:

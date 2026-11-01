@@ -1,6 +1,12 @@
 """
 CLI / stdin runner for handling an event through Bot Fork.
-Takes event JSON via stdin, updates /tmp session state, and prints HandlerResult JSON to stdout.
+
+Usage:
+    python3 scripts/handle_event.py            # read event JSON from stdin, print HandlerResult JSON
+    python3 scripts/handle_event.py --reset    # read {platform, user_id, chat_id} from stdin, drop session
+
+Session state lives in a per-user file inside tempfile.gettempdir() so that
+consecutive one-shot processes behave like a continuous conversation.
 """
 
 from __future__ import annotations
@@ -9,6 +15,7 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 
 # Ensure bot_fork can be imported
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -17,24 +24,51 @@ from bot_fork import BotForkApp, IncomingEvent
 from bot_fork.models import SessionKey, UserSession
 from examples.demo_info import info_scene
 
+SAFE_ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+
+
+def read_payload() -> dict:
+    return json.loads(sys.stdin.read())
+
+
+def session_params(data: dict) -> tuple[str, str, str]:
+    platform = str(data.get("platform", "telegram")).strip().lower()
+    user_id = str(data.get("user_id", "1001")).strip()
+    chat_id = str(data.get("chat_id", "1001")).strip()
+    if platform not in ("telegram", "vk"):
+        raise ValueError(f"Unsupported platform: {platform!r}")
+    for value in (user_id, chat_id):
+        if not value or not SAFE_ID_CHARS.issuperset(value):
+            raise ValueError(f"Unsupported session id: {value!r}")
+    return platform, user_id, chat_id
+
+
+def state_file_path(platform: str, user_id: str) -> str:
+    return os.path.join(tempfile.gettempdir(), f"bot_fork_sess_{platform}_{user_id}.json")
+
+
+def reset_session() -> None:
+    platform, user_id, _ = session_params(read_payload())
+    state_file = state_file_path(platform, user_id)
+    cleared = False
+    try:
+        os.remove(state_file)
+        cleared = True
+    except FileNotFoundError:
+        pass
+    print(json.dumps({"ok": True, "cleared": cleared}))
+
 
 async def main():
-    if len(sys.argv) > 1:
-        raw_input = sys.argv[1]
-    else:
-        raw_input = sys.stdin.read()
-
-    data = json.loads(raw_input)
-    platform = data.get("platform", "telegram")
-    user_id = str(data.get("user_id", "1001"))
-    chat_id = str(data.get("chat_id", "1001"))
+    data = read_payload()
+    platform, user_id, chat_id = session_params(data)
     text = data.get("text")
     payload = data.get("payload")
 
     app = BotForkApp(platform=platform)
     app.register_scene(info_scene)
 
-    state_file = f"/tmp/bot_fork_sess_{platform}_{user_id}.json"
+    state_file = state_file_path(platform, user_id)
     key = SessionKey(platform=platform, user_id=user_id, chat_id=chat_id)
 
     # Restore session state if exists
@@ -64,13 +98,17 @@ async def main():
 
     # Update or clear persistent state file
     if result.clear_session:
-        if os.path.exists(state_file):
-            try:
-                os.remove(state_file)
-            except OSError:
-                pass
+        try:
+            os.remove(state_file)
+        except FileNotFoundError:
+            pass
     elif result.session_after:
-        with open(state_file, "w", encoding="utf-8") as f:
+        fd = os.open(
+            state_file,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            0o600,
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "scene_id": result.session_after.scene_id,
@@ -85,4 +123,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if "--reset" in sys.argv[1:]:
+        reset_session()
+    else:
+        asyncio.run(main())

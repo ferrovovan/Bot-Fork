@@ -5,10 +5,27 @@ Conforms to ScenoMost Bot Fork MVP 3.1 specification.
 """
 
 import os
-from dotenv import load_dotenv
-from bot_fork import BotForkApp, Scene, Step, Button
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    # Fallback if python-dotenv is not installed in the environment
+    if os.path.exists(".env"):
+        try:
+            with open(".env", "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k, v = k.strip(), v.strip().strip("'\"")
+                        if k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
+
+from bot_fork import BotForkApp, Scene, Step, Button
 
 
 def validate_name(text: str):

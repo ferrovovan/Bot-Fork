@@ -45,7 +45,7 @@ class TestFSMEngine(unittest.TestCase):
         self.assertEqual(result.session_after.step_id, "branch")
         self.assertEqual(result.session_after.data.get("name"), "Алексей")
         self.assertIn("Выберите путь:", result.messages[0].text)
-        self.assertIn("Made with Bot Fork", result.messages[0].text)
+        self.assertNotIn("Made with Bot Fork", result.messages[0].text)
 
     def test_text_step_invalid_empty(self):
         session = UserSession(session_key=self.key, scene_id="test_flow", step_id="name", data={})
@@ -116,7 +116,7 @@ class TestFSMEngine(unittest.TestCase):
 
         self.assertTrue(result.clear_session)
         self.assertIsNone(result.session_after)
-        self.assertIn("Made with Bot Fork", result.messages[0].text)
+        self.assertNotIn("Made with Bot Fork", result.messages[0].text)
 
 
 if __name__ == "__main__":

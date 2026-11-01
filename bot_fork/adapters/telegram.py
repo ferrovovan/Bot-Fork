@@ -538,6 +538,20 @@ class TelegramAdapter(PlatformAdapter):
                     await self.send(out_msg)
 
             logger.info("Starting Telegram long polling...")
-            await dp.start_polling(bot)
+            # F-26: обрыв сети/прокси не роняет бота — переподключение с паузой.
+            # (внутри запущенного polling aiogram сам себе retry-ит; эта петля
+            # лечит отказы СТАРТА: getMe/getWebhookInfo через падающий прокси)
+            import asyncio
+            while True:
+                try:
+                    await dp.start_polling(bot)
+                    break
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except ImportError:
+                    raise
+                except Exception as e:  # TelegramNetworkError и сетевые собратья
+                    logger.warning("Polling dropped: %s — reconnect in 5s", e)
+                    await asyncio.sleep(5)
         except ImportError as e:
             raise PlatformError("aiogram must be installed to start live Telegram polling: pip install aiogram") from e

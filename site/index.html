@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bot Fork — диалоговые сцены для Telegram и ВКонтакте</title>
+<meta name="description" content="Встраиваемая Python-библиотека прототипирования диалоговых ботов: сцены, шаги, кнопки — один код для Telegram и VK. Страница собрана из живого прогона ядра.">
+<style>
+  :root {
+    --bg: #0b0e17; --panel: #121727; --panel2: #0e1322;
+    --ink: #e8ecf5; --dim: #8b94ab; --acc: #ff8a3d; --acc2: #59d0ff; --ok: #6ee7a0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(1200px 600px at 70% -10%, #1b2340 0%, var(--bg) 55%);
+         color: var(--ink); font: 16px/1.55 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 0 20px 80px; }
+  header { text-align: center; padding: 72px 0 28px; }
+  .logo { font-size: 64px; }
+  h1 { font-size: 44px; margin: 8px 0 6px; letter-spacing: -1px; }
+  h1 span { color: var(--acc); }
+  .tagline { color: var(--dim); font-size: 19px; max-width: 720px; margin: 0 auto; }
+  .badges { margin-top: 18px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .badges img { height: 22px; }
+  .cta { margin-top: 22px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .cta a { text-decoration: none; font-weight: 600; padding: 10px 18px; border-radius: 10px; }
+  .cta .main { background: var(--acc); color: #171008; }
+  .cta .ghost { border: 1px solid #2c3652; color: var(--ink); }
+  h2 { font-size: 26px; margin: 56px 0 6px; letter-spacing: -0.5px; }
+  .sub { color: var(--dim); margin: 0 0 18px; }
+  .term { background: #05070d; border: 1px solid #1e2740; border-radius: 14px; padding: 18px 20px;
+          overflow-x: auto; font: 13px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+          white-space: pre; color: #d7e0f2; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+  .term b.who { color: var(--acc2); }
+  .term b.ok  { color: var(--ok); }
+  .note { color: var(--dim); font-size: 14px; margin-top: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid #1e2740; border-radius: 12px; padding: 14px 16px; }
+  .card b { display: block; margin-bottom: 4px; }
+  .card .f { color: var(--acc); font-weight: 700; font-size: 12px; }
+  .card p { margin: 0; color: var(--dim); font-size: 14px; }
+  pre.code { background: var(--panel2); border: 1px solid #1e2740; border-radius: 12px;
+             padding: 16px 18px; overflow-x: auto; font: 13px/1.6 ui-monospace, Menlo, Consolas, monospace; }
+  pre.code .c { color: var(--dim); }
+  footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid #1e2740; color: var(--dim);
+           font-size: 14px; text-align: center; }
+  a { color: var(--acc2); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo">🍕🛸</div>
+    <h1>Bot <span>Fork</span></h1>
+    <p class="tagline">Встраиваемая Python-библиотека диалоговых сцен для Telegram и ВКонтакте.
+    Логика пишется один раз на чистом Python — бот меняется только конфигурацией окружения.</p>
+    <div class="badges">
+      <a href="https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml"><img src="https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml/badge.svg" alt="CI"></a>
+      <a href="https://github.com/ferrovovan/Bot-Fork/releases"><img src="https://img.shields.io/github/v/release/ferrovovan/Bot-Fork?include_prereleases&label=release" alt="Release"></a>
+      <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="Apache-2.0"></a>
+    </div>
+    <div class="cta">
+      <a class="main" href="https://github.com/ferrovovan/Bot-Fork">GitHub — README и установка</a>
+      <a class="ghost" href="https://github.com/ferrovovan/Bot-Fork/blob/main/examples/demo_mars_pizza.py">Исходник витринного примера</a>
+    </div>
+  </header>
+
+  <h2>Живой прогон, не картинка</h2>
+  <p class="sub">Ни одного нарисованного ответа: этот лог сгенерирован <b>настоящим ядром</b>
+  <code>bot_fork</code> на mock-адаптере прямо в GitHub Actions при каждой сборке страницы.
+  17 реплик примера «Марс-Пицца» — и на них видно 12 возможностей движка.</p>
+  <pre class="term"><!--TRANSCRIPT--></pre>
+  <p class="note">Повторить у себя: <code>git clone https://github.com/ferrovovan/Bot-Fork &amp;&amp; cd Bot-Fork</code>,
+  затем <code>python -m examples.demo_mars_pizza</code> — или сесть за игрока: <code>--live</code>. Токены не нужны.</p>
+
+  <h2>Что видно в этом прогоне</h2>
+  <div class="grid">
+    <div class="card"><b>Сцены кнопкой <code>scene:&lt;id&gt;</code></b><span class="f">F-23</span><p>Меню запускает заказ без единого перехода-перехвата.</p></div>
+    <div class="card"><b>Живая клавиатура</b><span class="f">F-29</span><p>После первой доставки кнопка «📊 Доставлено» появляется сама — async-функция от сессии.</p></div>
+    <div class="card"><b>Корзина в prompt'е</b><span class="f">F-05</span><p>Текст шага — функция от сессии: сумма и состав считаются на каждый показ.</p></div>
+    <div class="card"><b>Отказ со своими кнопками</b><span class="f">F-28</span><p>Ананас запрещён хартией — и отказ сам предлагает, чем его заменить.</p></div>
+    <div class="card"><b>Текст вместо кнопки</b><span class="f">F-30</span><p>Побег с choice-шага не ломает диалог: тёплое «давайте кнопкой» и те же кнопки.</p></div>
+    <div class="card"><b>Async-валидатор</b><span class="f">F-04</span><p>«Реестр куполов» — корутина: адрес проверяется без блокировки движка.</p></div>
+    <div class="card"><b>Системная полоса</b><span class="f">F-06 · F-22</span><p>Гвоздь программы:job будит стыковку дрона посреди заказа; заказ ждёт и продолжается с того же шага.</p></div>
+    <div class="card"><b>Свой финал сцены</b><span class="f">F-09</span><p>Вместо generic-отчёта ядра — настоящий чек «Марс-Пиццы».</p></div>
+    <div class="card"><b>Сцена из одного info</b><span class="f">F-33</span><p>Правила печатаются и завершаются сами, не заглатывая следующее сообщение.</p></div>
+    <div class="card"><b>Шапка перезапуска</b><span class="f">F-27</span><p>«Новый заказ — начинаем с диаметра.» — текст задаёт сцена, не ядро.</p></div>
+    <div class="card"><b>Отмена по-русски</b><span class="f">F-31 · F-32</span><p>«/отмена» — команда продукта, а подсказка «Заново — /заказ» живая.</p></div>
+    <div class="card"><b>Ядро без платформ</b><span class="f">NFR-03</span><p>aiogram и vkbottle — только в адаптерах; весь прогон прошёл на mock-адаптере без токенов.</p></div>
+  </div>
+
+  <h2>Быстрый старт</h2>
+<pre class="code"><span class="c"># ядро + Telegram + VK</span>
+pip install "bot-fork[all] @ git+https://github.com/ferrovovan/Bot-Fork"
+
+<span class="c"># сцена — чистый Python, без платформенных классов</span>
+from bot_fork import BotForkApp, Scene, Step, Button
+
+order = Scene(
+    id="order",
+    entry_commands=("/заказ",),
+    steps=(
+        Step.choice("size", "Какой диаметр?",
+                    buttons=(Button("20 см", "s20"), Button("30 см", "s30")),
+                    next="toppings"),
+        <span class="c"># … топпинги, адрес, свой чек через on_complete — в examples/demo_mars_pizza.py</span>
+    ),
+)
+
+app = BotForkApp.from_env()   <span class="c"># ENABLED_PLATFORMS=telegram или vk — и ничего больше</span>
+app.register_scene(order)
+app.run()</pre>
+
+  <footer>
+    Bot Fork · Apache-2.0 · <a href="https://github.com/ferrovovan/Bot-Fork">ferrovovan/Bot-Fork</a> ·
+    хроника версий — <a href="https://github.com/ferrovovan/Bot-Fork/blob/main/docs/History.md">docs/History.md</a><br>
+    Выращена в бою при сборке сервиса подбора команд TEAMWINNING; страница собрана GitHub Actions.
+  </footer>
+</main>
+</body>
+</html>

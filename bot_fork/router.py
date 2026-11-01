@@ -6,6 +6,7 @@ Routes commands, manages active session transitions, and handles /cancel and /in
 from __future__ import annotations
 
 import inspect
+import logging
 from typing import Dict, List, Optional
 from bot_fork.exceptions import ConfigError
 from bot_fork.fsm import FSMEngine, apply_branding
@@ -18,6 +19,8 @@ from bot_fork.models import (
 )
 from bot_fork.scene import SceneDefinition
 from bot_fork.storage import StateStorage
+
+logger = logging.getLogger("bot_fork.router")
 
 
 class SceneRegistry:
@@ -88,6 +91,7 @@ class DialogRouter:
             return HandlerResult()
 
         text = (event.text or "").strip()
+        logger.debug("event %s: text=%r payload=%r", event.platform, text[:100], event.payload)
         command_token = text.split()[0].lower() if text.startswith("/") else ""
 
         # Step 1: Handle /cancel (system command, before any scene logic).

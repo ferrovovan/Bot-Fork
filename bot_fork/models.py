@@ -66,6 +66,23 @@ class Button:
         return {"label": self.label, "value": self.value}
 
 
+@dataclass(frozen=True)
+class Reject:
+    """F-28: отказ действия со своими кнопками (F-28).
+
+    Действие шага отказывает двумя способами: строкой (печатается кнопки шага,
+    как раньше) или Reject — тогда под текстом отказа кладём кнопки перехода,
+    которых в самом шаге нет. Кнопка `scene:<id>` запускает сцену (F-23), так
+    что отказ «команды нет» может предложить «📝 Анкета».
+    """
+    text: str
+    buttons: Tuple[Button, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.text.strip():
+            raise ValueError("Reject text must be non-empty")
+
+
 @dataclass
 class IncomingEvent:
     """

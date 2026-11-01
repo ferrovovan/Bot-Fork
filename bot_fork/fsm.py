@@ -12,12 +12,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from bot_fork.exceptions import ConfigError
 
 logger = logging.getLogger("bot_fork")
+from bot_fork.builder import ButtonBuilder
 from bot_fork.models import (
     Button,
     ErrorInfo,
     HandlerResult,
     IncomingEvent,
     OutgoingMessage,
+    Reject,
     UserSession,
 )
 from bot_fork.scene import SceneDefinition, StepDefinition
@@ -204,6 +206,7 @@ class FSMEngine:
         # продукта (запись голоса, сохранение согласия). Действие получает значение и
         # словарь данных (может его дополнять), может быть async. Строка-возврат —
         # причина отказа: данные НЕ сохраняются, игрок остаётся на шаге.
+        # F-28: Reject(text, buttons) — тот же отказ, но под текстом свои кнопки.
         if step.action is not None:
             try:
                 action_args: Tuple = (value_to_save or "", new_session.data)
@@ -224,6 +227,21 @@ class FSMEngine:
                     session_after=session,
                     clear_session=False,
                     error=ErrorInfo(code="ACTION_ERROR", message=str(e), retryable=True),
+                )
+            if isinstance(action_res, Reject):
+                # F-28: отказ со своими кнопками (обычно launch `scene:<id>`) —
+                # под текстом отказа то, чем игрок может выйти из тупика.
+                return HandlerResult(
+                    messages=(
+                        OutgoingMessage(
+                            chat_id=event.chat_id,
+                            text=apply_branding(action_res.text),
+                            buttons=ButtonBuilder.keyboard(*action_res.buttons),
+                        ),
+                    ),
+                    session_after=session,
+                    clear_session=False,
+                    error=ErrorInfo(code="ACTION_REJECTED", message=action_res.text, retryable=True),
                 )
             if isinstance(action_res, str) and action_res.strip():
                 return HandlerResult(

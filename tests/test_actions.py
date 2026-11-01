@@ -10,7 +10,7 @@ import unittest
 from bot_fork.adapters.vk import VKAdapter
 from bot_fork.app import BotForkApp
 from bot_fork.fsm import FSMEngine
-from bot_fork.models import Button, IncomingEvent, SessionKey, UserSession
+from bot_fork.models import Button, IncomingEvent, Reject, SessionKey, UserSession
 from bot_fork.scene import Scene, Step
 from bot_fork.sql_storage import SqlStateStorage
 
@@ -105,6 +105,34 @@ class TestStepAction(unittest.IsolatedAsyncioTestCase):
         # Игрок остался на шаге, данные не сохранились
         self.assertEqual(result.session_after.step_id, "steam")
         self.assertNotIn("steam", result.session_after.data)
+
+    async def test_reject_carries_own_buttons(self):
+        # F-28: отказ может предложить выход — свои кнопки вместо кнопок шага
+        async def action(value: str, data: dict):
+            return Reject("Команды пока нет — сначала анкета.",
+                          (Button("📝 Анкета", "scene:survey"),))
+
+        scene = Scene(
+            id="rej28",
+            entry_commands=("/rej28",),
+            steps=(
+                Step.choice("tabs", "Дневник", buttons=(Button("👥 Состав", "roster"),),
+                            transitions={"roster": "view"}, action=action),
+                Step.text("view", "Состав", complete=True),
+            ),
+        )
+        session = UserSession(session_key=self.key, scene_id=scene.id, step_id="tabs")
+        event = IncomingEvent(platform="vk", user_id="7", chat_id="7", payload="roster")
+        result = await self.fsm.process_step(event, session, scene)
+
+        self.assertEqual(result.error.code, "ACTION_REJECTED")
+        self.assertIn("сначала анкета", result.messages[0].text)
+        self.assertEqual([b.value for b in result.messages[0].buttons], ["scene:survey"])
+        self.assertEqual(result.session_after.step_id, "tabs")  # остались на месте
+
+    async def test_reject_requires_text(self):
+        with self.assertRaises(ValueError):
+            Reject("  ")
 
     async def test_action_receives_session_context(self):
         seen = {}

@@ -89,6 +89,21 @@ class FSMEngine:
         # 1. Validate & extract answer
         value_to_save: Optional[str] = None
 
+        if step.input_type == "text" and event.payload:
+            # Нажатие кнопки, которая не относится к текущему шагу (например,
+            # «О проекте» посреди анкеты): честный INVALID_BUTTON, а не «пустой ответ».
+            return HandlerResult(
+                messages=(
+                    OutgoingMessage(
+                        chat_id=event.chat_id,
+                        text=apply_branding("Эта кнопка не из текущего шага. Наберите /cancel, чтобы сбросить диалог."),
+                    ),
+                ),
+                session_after=session,
+                clear_session=False,
+                error=ErrorInfo(code="INVALID_BUTTON", message="Payload at text step", retryable=True),
+            )
+
         if step.input_type == "text":
             raw_text = event.text or ""
             trimmed = raw_text.strip()
@@ -256,18 +271,49 @@ class FSMEngine:
                 clear_session=True,
             )
 
-        new_session.step_id = next_step.id
-        return HandlerResult(
-            messages=(
+        # F-25: инфо-шаги не требуют ввода — печатаем и идём по цепочке дальше,
+        # пока не упрёмся в шаг с вводом (сессия встаёт на него) или в конец сцены.
+        messages: List[OutgoingMessage] = []
+        cur = next_step
+        for _ in range(10):  # защита от цикла info→info
+            new_session.step_id = cur.id
+            messages.append(
                 OutgoingMessage(
                     chat_id=event.chat_id,
-                    text=apply_branding(next_step.render_prompt(new_session)),
-                    buttons=next_step.buttons,
-                ),
-            ),
-            session_after=new_session,
-            clear_session=False,
-            error=None,
+                    text=apply_branding(cur.render_prompt(new_session)),
+                    buttons=cur.buttons,
+                )
+            )
+            if cur.input_type != "info":
+                return HandlerResult(
+                    messages=tuple(messages),
+                    session_after=new_session,
+                    clear_session=False,
+                    error=None,
+                )
+            if cur.action is not None:
+                action_args: Tuple = ("", new_session.data)
+                if _action_takes_session(cur.action):
+                    action_args += (new_session,)
+                res = cur.action(*action_args)
+                if inspect.isawaitable(res):
+                    await res
+            if cur.complete or not cur.next_step_id:
+                messages.extend(await self._completion_messages(scene, new_session, event.chat_id))
+                return HandlerResult(messages=tuple(messages), session_after=None,
+                                     clear_session=True, error=None)
+            nxt = scene.get_step(cur.next_step_id)
+            if nxt is None:
+                messages.append(OutgoingMessage(chat_id=event.chat_id,
+                                                text=apply_branding("Сценарий успешно завершён.")))
+                return HandlerResult(messages=tuple(messages), session_after=None,
+                                     clear_session=True, error=None)
+            cur = nxt
+        return HandlerResult(
+            messages=(OutgoingMessage(chat_id=event.chat_id,
+                                      text=apply_branding("Внутренняя ошибка: цикл инфо-шагов.")),),
+            session_after=None, clear_session=True,
+            error=ErrorInfo(code="INTERNAL_ERROR", message="info-step loop", retryable=False),
         )
 
     async def _completion_messages(

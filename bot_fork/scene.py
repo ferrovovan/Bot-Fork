@@ -43,10 +43,12 @@ class StepDefinition:
             raise ConfigError("Step id must be a non-empty string")
         if not callable(self.prompt) and (not self.prompt or not isinstance(self.prompt, str)):
             raise ConfigError(f"Step '{self.id}' prompt must be a non-empty string or a callable")
-        if self.input_type not in ("text", "choice"):
-            raise ConfigError(f"Step '{self.id}' input_type must be 'text' or 'choice', got '{self.input_type}'")
+        if self.input_type not in ("text", "choice", "info"):
+            raise ConfigError(f"Step '{self.id}' input_type must be 'text', 'choice' or 'info', got '{self.input_type}'")
         if len(self.buttons) > 4:
             raise ConfigError(f"Step '{self.id}' cannot have more than 4 buttons (got {len(self.buttons)})")
+        if self.input_type == "info" and self.buttons:
+            raise ConfigError(f"Step '{self.id}' has input_type='info' but buttons were provided (инфо-шаг не жмёт кнопок)")
         if self.input_type == "choice" and not self.buttons:
             raise ConfigError(f"Step '{self.id}' has input_type='choice' but no buttons were provided")
 
@@ -90,6 +92,33 @@ class Step:
             input_type="text",
             buttons=(),
             validator=validator,
+            transitions={},
+            next_step_id=next,
+            complete=complete,
+            action=action,
+        )
+
+    @staticmethod
+    def info(
+        id: str,
+        prompt: str,
+        next: Optional[str] = None,
+        complete: bool = False,
+        action: Optional[ActionFunc] = None,
+    ) -> StepDefinition:
+        """Инфо-шаг: печатает prompt и идёт дальше сам, ввода не ждёт.
+
+        Нужен для сообщений-результатов («О проекте», «Название принято»), после
+        которых диалог должен вернуться в меню, а не зависать в ожидании текста —
+        иначе следующая кнопка прилетает в шаг-ожидание и FSM отвечает
+        «Ответ не должен быть пустым» (баг живой приёмки 2026-11-01).
+        """
+        return StepDefinition(
+            id=id,
+            prompt=prompt,
+            input_type="info",
+            buttons=(),
+            validator=None,
             transitions={},
             next_step_id=next,
             complete=complete,

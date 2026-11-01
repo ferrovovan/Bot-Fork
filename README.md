@@ -33,6 +33,10 @@
   ждёт в своём слоте и продолжается с того же шага (F-06); `app.start_scene(scene_id,
   user_id, chat_id, data)` — запуск сцены из кода для jobs/outbox (F-22); схема
   `SqlStateStorage` v2 (PK с lane) с авто-миграцией старых баз.
+- **v1.6** — динамические prompt'ы (F-05): `Step(..., prompt=...)` принимает `str` или
+  функцию `Callable[[UserSession], str]` — карточка слота и регламент чата рендерятся из
+  данных сессии в момент показа (старт сцены и каждый переход). Статический контракт
+  сохранён: обычная строка ведёт себя как раньше.
 
 [![Build Wheel & CI](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml/badge.svg)](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml)
 [![Release](https://img.shields.io/github/v/release/ferrovovan/Bot-Fork?include_prereleases&label=release)](https://github.com/ferrovovan/Bot-Fork/releases)

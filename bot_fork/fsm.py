@@ -263,7 +263,7 @@ class FSMEngine:
             messages=(
                 OutgoingMessage(
                     chat_id=event.chat_id,
-                    text=apply_branding(next_step.prompt),
+                    text=apply_branding(next_step.render_prompt(new_session)),
                     buttons=next_step.buttons,
                 ),
             ),

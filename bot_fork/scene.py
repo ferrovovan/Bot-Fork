@@ -5,6 +5,7 @@ Enforces structural integrity and immutability of dialogue scenes.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
 from bot_fork.builder import ButtonBuilder
@@ -12,6 +13,9 @@ from bot_fork.exceptions import ConfigError
 from bot_fork.models import Button
 
 ValidatorFunc = Callable[[str], Union[bool, Tuple[bool, str], None]]
+# F-05: prompt может быть функцией от сессии (карточка слота, регламент из анкет).
+# Вызывается с UserSession (или без аргументов); обязана вернуть непустую str.
+PromptFunc = Callable[..., str]
 # F-04: действие шага — сид-эффект после валидного ответа (вызов сервиса продукта).
 # Принимает (значение, словарь данных сессии — можно дополнять), может быть async.
 # Возврат строки трактуется как причина отказа: шаг не завершается, данные не сохраняются.
@@ -25,7 +29,7 @@ class StepDefinition:
     Defines prompt, input validation, buttons, and transitions.
     """
     id: str
-    prompt: str
+    prompt: Union[str, PromptFunc]  # F-05: str или Callable[[UserSession], str]
     input_type: str = "text"  # "text" | "choice"
     buttons: Tuple[Button, ...] = ()
     validator: Optional[ValidatorFunc] = None
@@ -37,8 +41,8 @@ class StepDefinition:
     def __post_init__(self) -> None:
         if not self.id or not isinstance(self.id, str):
             raise ConfigError("Step id must be a non-empty string")
-        if not self.prompt or not isinstance(self.prompt, str):
-            raise ConfigError(f"Step '{self.id}' prompt must be a non-empty string")
+        if not callable(self.prompt) and (not self.prompt or not isinstance(self.prompt, str)):
+            raise ConfigError(f"Step '{self.id}' prompt must be a non-empty string or a callable")
         if self.input_type not in ("text", "choice"):
             raise ConfigError(f"Step '{self.id}' input_type must be 'text' or 'choice', got '{self.input_type}'")
         if len(self.buttons) > 4:
@@ -49,6 +53,23 @@ class StepDefinition:
         values = [b.value for b in self.buttons]
         if len(values) != len(set(values)):
             raise ConfigError(f"Step '{self.id}' has duplicate button values: {values}")
+
+    def render_prompt(self, session: Any = None) -> str:
+        """F-05: статический prompt или текст, вычисленный из данных сессии."""
+        if not callable(self.prompt):
+            return self.prompt
+        try:
+            params = inspect.signature(self.prompt).parameters
+            takes_arg = any(
+                p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                for p in params.values()
+            )
+            result = self.prompt(session) if takes_arg else self.prompt()
+        except Exception as e:  # исключение продукта не должно ронять роутер
+            raise ConfigError(f"Step '{self.id}' dynamic prompt raised {e!r}") from e
+        if not isinstance(result, str) or not result:
+            raise ConfigError(f"Step '{self.id}' dynamic prompt must return a non-empty string")
+        return result
 
 
 class Step:

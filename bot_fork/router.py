@@ -218,7 +218,7 @@ class DialogRouter:
         )
         # Если в этой полосе уже был диалог этой же сцены — предупредить о перезапуске
         prefix = "Анкета начата заново.\n\n" if had_session else ""
-        prompt_text = prefix + start_step.prompt
+        prompt_text = prefix + start_step.render_prompt(new_session)
 
         await self.storage.set(new_session)
         return HandlerResult(

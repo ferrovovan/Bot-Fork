@@ -5,6 +5,7 @@ Routes commands, manages active session transitions, and handles /cancel and /in
 
 from __future__ import annotations
 
+import inspect
 from typing import Dict, List, Optional
 from bot_fork.exceptions import ConfigError
 from bot_fork.fsm import FSMEngine, apply_branding
@@ -188,6 +189,9 @@ class DialogRouter:
             )
 
         result = self.fsm.process_step(event, session, scene)
+        # Совместимость: собственный FSMEngine может остаться синхронным (F-04).
+        if inspect.isawaitable(result):
+            result = await result
 
         # Persist updated session or clear upon completion
         if result.clear_session:

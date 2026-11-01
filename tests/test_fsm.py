@@ -8,7 +8,7 @@ from bot_fork.models import Button, IncomingEvent, SessionKey, UserSession
 from bot_fork.scene import Scene, Step
 
 
-class TestFSMEngine(unittest.TestCase):
+class TestFSMEngine(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.fsm = FSMEngine()
         self.scene = Scene(
@@ -33,11 +33,11 @@ class TestFSMEngine(unittest.TestCase):
         )
         self.key = SessionKey(platform="telegram", user_id="101", chat_id="101")
 
-    def test_text_step_valid(self):
+    async def test_text_step_valid(self):
         session = UserSession(session_key=self.key, scene_id="test_flow", step_id="name", data={})
         event = IncomingEvent(platform="telegram", user_id="101", chat_id="101", text="Алексей")
 
-        result = self.fsm.process_step(event, session, self.scene)
+        result = await self.fsm.process_step(event, session, self.scene)
 
         self.assertIsNone(result.error)
         self.assertFalse(result.clear_session)
@@ -47,11 +47,11 @@ class TestFSMEngine(unittest.TestCase):
         self.assertIn("Выберите путь:", result.messages[0].text)
         self.assertNotIn("Made with Bot Fork", result.messages[0].text)
 
-    def test_text_step_invalid_empty(self):
+    async def test_text_step_invalid_empty(self):
         session = UserSession(session_key=self.key, scene_id="test_flow", step_id="name", data={})
         event = IncomingEvent(platform="telegram", user_id="101", chat_id="101", text="   ")
 
-        result = self.fsm.process_step(event, session, self.scene)
+        result = await self.fsm.process_step(event, session, self.scene)
 
         self.assertIsNotNone(result.error)
         self.assertEqual(result.error.code, "INVALID_INPUT")
@@ -59,18 +59,18 @@ class TestFSMEngine(unittest.TestCase):
         self.assertEqual(result.session_after.step_id, "name")
         self.assertEqual(result.session_after.data, {})
 
-    def test_text_step_validator_failure(self):
+    async def test_text_step_validator_failure(self):
         session = UserSession(session_key=self.key, scene_id="test_flow", step_id="name", data={})
         event = IncomingEvent(platform="telegram", user_id="101", chat_id="101", text="А")
 
-        result = self.fsm.process_step(event, session, self.scene)
+        result = await self.fsm.process_step(event, session, self.scene)
 
         self.assertIsNotNone(result.error)
         self.assertEqual(result.error.code, "INVALID_INPUT")
         self.assertIn("Имя слишком короткое", result.error.message)
         self.assertEqual(result.session_after.step_id, "name")
 
-    def test_choice_step_transition_a(self):
+    async def test_choice_step_transition_a(self):
         session = UserSession(
             session_key=self.key,
             scene_id="test_flow",
@@ -79,14 +79,14 @@ class TestFSMEngine(unittest.TestCase):
         )
         event = IncomingEvent(platform="telegram", user_id="101", chat_id="101", payload="opt_a")
 
-        result = self.fsm.process_step(event, session, self.scene)
+        result = await self.fsm.process_step(event, session, self.scene)
 
         self.assertIsNone(result.error)
         self.assertEqual(result.session_after.step_id, "step_a")
         self.assertEqual(result.session_after.data.get("branch"), "opt_a")
         self.assertIn("Вы выбрали ветку А", result.messages[0].text)
 
-    def test_choice_step_invalid_payload(self):
+    async def test_choice_step_invalid_payload(self):
         session = UserSession(
             session_key=self.key,
             scene_id="test_flow",
@@ -95,7 +95,7 @@ class TestFSMEngine(unittest.TestCase):
         )
         event = IncomingEvent(platform="telegram", user_id="101", chat_id="101", payload="unknown_val")
 
-        result = self.fsm.process_step(event, session, self.scene)
+        result = await self.fsm.process_step(event, session, self.scene)
 
         self.assertIsNotNone(result.error)
         self.assertEqual(result.error.code, "INVALID_BUTTON")
@@ -103,7 +103,7 @@ class TestFSMEngine(unittest.TestCase):
         self.assertEqual(result.session_after.step_id, "branch")
         self.assertNotIn("branch", result.session_after.data)
 
-    def test_complete_step_clears_session(self):
+    async def test_complete_step_clears_session(self):
         session = UserSession(
             session_key=self.key,
             scene_id="test_flow",
@@ -112,7 +112,7 @@ class TestFSMEngine(unittest.TestCase):
         )
         event = IncomingEvent(platform="telegram", user_id="101", chat_id="101", text="Завершить")
 
-        result = self.fsm.process_step(event, session, self.scene)
+        result = await self.fsm.process_step(event, session, self.scene)
 
         self.assertTrue(result.clear_session)
         self.assertIsNone(result.session_after)

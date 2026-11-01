@@ -9,12 +9,12 @@ import asyncio
 import logging
 import os
 import time
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 from bot_fork.adapters.base import PlatformAdapter
 from bot_fork.adapters.telegram import TelegramAdapter
 from bot_fork.adapters.vk import VKAdapter
 from bot_fork.exceptions import ConfigError
-from bot_fork.models import HandlerResult, IncomingEvent
+from bot_fork.models import Button, HandlerResult, IncomingEvent, OutgoingMessage
 from bot_fork.router import DialogRouter, SceneRegistry
 from bot_fork.scene import SceneDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
@@ -132,6 +132,20 @@ class BotForkApp:
             duration_ms = (time.perf_counter() - start_time) * 1000.0
             logger.error("Internal error handling event: %s | duration=%.2fms", e, duration_ms)
             raise
+
+    async def send(
+        self,
+        chat_id: str,
+        text: str,
+        buttons: Tuple[Button, ...] = (),
+    ) -> None:
+        """
+        F-11: исходящая отправка без входящего события (напоминания, отчёты, эскалации).
+        Сообщение форматируется текущим адаптером платформы и уходит напрямую.
+        """
+        message = OutgoingMessage(chat_id=str(chat_id), text=text, buttons=tuple(buttons))
+        await self.adapter.send(message)
+        logger.info("Proactive send | platform=%s | len=%d", self.platform, len(text))
 
     async def _run_async(self) -> None:
         """Internal asynchronous runner for adapter polling."""

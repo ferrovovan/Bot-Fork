@@ -5,6 +5,7 @@ Validates input, transitions states, accumulates survey data, and appends mandat
 
 from __future__ import annotations
 
+import inspect
 from typing import Dict, List, Optional, Tuple
 from bot_fork.exceptions import ConfigError
 from bot_fork.models import (
@@ -40,7 +41,7 @@ class FSMEngine:
     def __init__(self) -> None:
         pass
 
-    def process_step(
+    async def process_step(
         self,
         event: IncomingEvent,
         session: UserSession,
@@ -48,6 +49,7 @@ class FSMEngine:
     ) -> HandlerResult:
         """
         Processes an incoming event against the active step of a session.
+        Async (F-04): validators и actions шага могут быть корутинами.
         """
         step = scene.get_step(session.step_id)
         if step is None:
@@ -89,6 +91,8 @@ class FSMEngine:
             if step.validator is not None:
                 try:
                     res = step.validator(trimmed)
+                    if inspect.isawaitable(res):  # async-валидатор (F-04)
+                        res = await res
                     is_valid = True
                     err_msg = "Некорректный ввод. Попробуйте ещё раз."
                     if isinstance(res, tuple) and len(res) == 2:
@@ -158,6 +162,41 @@ class FSMEngine:
         # 2. Advance state and store data
         new_session = session.clone()
         new_session.data[step.id] = value_to_save or ""
+
+        # 2.5 Шаг-действие (F-04): сид-эффект после валидного ответа — вызов сервиса
+        # продукта (запись голоса, сохранение согласия). Действие получает значение и
+        # словарь данных (может его дополнять), может быть async. Строка-возврат —
+        # причина отказа: данные НЕ сохраняются, игрок остаётся на шаге.
+        if step.action is not None:
+            try:
+                action_res = step.action(value_to_save or "", new_session.data)
+                if inspect.isawaitable(action_res):
+                    action_res = await action_res
+            except Exception as e:
+                return HandlerResult(
+                    messages=(
+                        OutgoingMessage(
+                            chat_id=event.chat_id,
+                            text=apply_branding(f"Не получилось сохранить ответ. Попробуйте ещё раз."),
+                        ),
+                    ),
+                    session_after=session,
+                    clear_session=False,
+                    error=ErrorInfo(code="ACTION_ERROR", message=str(e), retryable=True),
+                )
+            if isinstance(action_res, str) and action_res.strip():
+                return HandlerResult(
+                    messages=(
+                        OutgoingMessage(
+                            chat_id=event.chat_id,
+                            text=apply_branding(action_res),
+                            buttons=step.buttons,
+                        ),
+                    ),
+                    session_after=session,
+                    clear_session=False,
+                    error=ErrorInfo(code="ACTION_REJECTED", message=action_res, retryable=True),
+                )
 
         # 3. Determine next step
         next_step_id: Optional[str] = None

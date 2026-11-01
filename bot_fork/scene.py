@@ -6,12 +6,16 @@ Enforces structural integrity and immutability of dialogue scenes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
 from bot_fork.builder import ButtonBuilder
 from bot_fork.exceptions import ConfigError
 from bot_fork.models import Button
 
 ValidatorFunc = Callable[[str], Union[bool, Tuple[bool, str], None]]
+# F-04: действие шага — сид-эффект после валидного ответа (вызов сервиса продукта).
+# Принимает (значение, словарь данных сессии — можно дополнять), может быть async.
+# Возврат строки трактуется как причина отказа: шаг не завершается, данные не сохраняются.
+ActionFunc = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,7 @@ class StepDefinition:
     transitions: Dict[str, str] = field(default_factory=dict)
     next_step_id: Optional[str] = None
     complete: bool = False
+    action: Optional[ActionFunc] = None
 
     def __post_init__(self) -> None:
         if not self.id or not isinstance(self.id, str):
@@ -56,6 +61,7 @@ class Step:
         validator: Optional[ValidatorFunc] = None,
         next: Optional[str] = None,
         complete: bool = False,
+        action: Optional[ActionFunc] = None,
     ) -> StepDefinition:
         return StepDefinition(
             id=id,
@@ -66,6 +72,7 @@ class Step:
             transitions={},
             next_step_id=next,
             complete=complete,
+            action=action,
         )
 
     @staticmethod
@@ -76,6 +83,7 @@ class Step:
         transitions: Optional[Dict[str, str]] = None,
         next: Optional[str] = None,
         complete: bool = False,
+        action: Optional[ActionFunc] = None,
     ) -> StepDefinition:
         btn_tuple = ButtonBuilder.keyboard(*buttons)
         trans = dict(transitions) if transitions else {}
@@ -88,6 +96,7 @@ class Step:
             transitions=trans,
             next_step_id=next,
             complete=complete,
+            action=action,
         )
 
 

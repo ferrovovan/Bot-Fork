@@ -145,8 +145,11 @@ class SceneDefinition:
                     )
 
             if s.input_type == "choice":
-                # Ensure each button value either has an explicit transition or default next_step_id
+                # Ensure each button value either has an explicit transition or default next_step_id.
+                # F-23: launch-кнопки `scene:<id>` перехватывает DialogRouter до FSM — переход не нужен.
                 for btn in s.buttons:
+                    if btn.value.startswith("scene:"):
+                        continue
                     if btn.value not in s.transitions and not s.next_step_id and not s.complete:
                         raise ConfigError(
                             f"Step '{s.id}' choice button '{btn.value}' has no transition and no default next_step_id"

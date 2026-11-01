@@ -110,8 +110,11 @@ class DialogRouter:
         # Step 2: Fetch active session
         session = await self.storage.get(event.session_key)
 
-        # Step 3: Handle entry commands (e.g., /info)
+        # Step 3: Handle entry commands (e.g., /info) and scene buttons (F-23: payload "scene:<id>")
         matched_scene = self.registry.resolve_command(text)
+        if matched_scene is None:
+            matched_scene = self._resolve_scene_button(event)
+
         if matched_scene is not None:
             # Starting new or restarting active scene
             new_session = UserSession(
@@ -200,3 +203,13 @@ class DialogRouter:
             await self.storage.set(result.session_after)
 
         return result
+
+    def _resolve_scene_button(self, event: IncomingEvent) -> Optional[SceneDefinition]:
+        """
+        F-23: кнопка запуска сцены. Зарезервированный payload `scene:<scene_id>`
+        стартует сцену так же, как entry-команда. Прочие payload'ы — как раньше.
+        """
+        payload = event.payload
+        if not isinstance(payload, str) or not payload.startswith("scene:"):
+            return None
+        return self.registry.get_scene(payload[len("scene:"):].strip())

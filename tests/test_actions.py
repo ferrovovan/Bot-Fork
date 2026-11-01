@@ -106,6 +106,40 @@ class TestStepAction(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.session_after.step_id, "steam")
         self.assertNotIn("steam", result.session_after.data)
 
+    async def test_action_receives_session_context(self):
+        seen = {}
+
+        async def action(value: str, data: dict, session) -> None:
+            seen["platform"] = session.session_key.platform
+            seen["user"] = session.session_key.user_id
+            data["who"] = f"{session.session_key.platform}:{session.session_key.user_id}"
+
+        scene = Scene(
+            id="ctx",
+            entry_commands=("/ctx",),
+            steps=(Step.text("q", "Ответ?", action=action, next="end"), Step.text("end", "Ок", complete=True)),
+        )
+
+        result = await self._run_text(scene, "q", "да")
+
+        self.assertIsNone(result.error)
+        self.assertEqual(seen["platform"], "vk")
+        self.assertEqual(result.session_after.data["who"], "vk:7")
+
+    async def test_two_arg_actions_still_work(self):
+        calls = []
+
+        def action(value: str, data: dict) -> None:
+            calls.append(value)
+
+        scene = Scene(
+            id="two",
+            entry_commands=("/two",),
+            steps=(Step.text("q", "Ответ?", action=action, next="end"), Step.text("end", "Ок", complete=True)),
+        )
+        await self._run_text(scene, "q", "раз")
+        self.assertEqual(calls, ["раз"])
+
     async def test_action_exception_maps_to_action_error(self):
         def action(value: str, data: dict) -> None:
             raise RuntimeError("база недоступна")

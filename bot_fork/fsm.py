@@ -24,6 +24,20 @@ BRANDING_WATERMARK = "\n\nMade with Bot Fork"
 MAX_MESSAGE_LENGTH = 4096
 
 
+def _action_takes_session(action) -> bool:
+    """True, если экшен объявляет третий аргумент (session) — F-04 контекст действия."""
+    try:
+        sig = inspect.signature(action)
+    except (TypeError, ValueError):
+        return False
+    positional = [
+        p
+        for p in sig.parameters.values()
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    return len(positional) >= 3
+
+
 def apply_branding(text: str) -> str:
     """
     Validates message length limit (4096 characters).
@@ -174,7 +188,11 @@ class FSMEngine:
         # причина отказа: данные НЕ сохраняются, игрок остаётся на шаге.
         if step.action is not None:
             try:
-                action_res = step.action(value_to_save or "", new_session.data)
+                action_args: Tuple = (value_to_save or "", new_session.data)
+                # F-04: контекст действия — экшены с третьим параметром получают session
+                if _action_takes_session(step.action):
+                    action_args += (new_session,)
+                action_res = step.action(*action_args)
                 if inspect.isawaitable(action_res):
                     action_res = await action_res
             except Exception as e:

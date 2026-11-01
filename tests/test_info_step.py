@@ -41,7 +41,42 @@ def _app() -> BotForkApp:
             Step.info("i2", "Инфа 2 (финал).", complete=True),
         ),
     ))
+    # F-33: сцена из одного info-шага (документ/правила)
+    app.register_scene(Scene(
+        id="doc",
+        entry_commands=("/doc",),
+        steps=(Step.info("doc", "Политика. Точка."),),
+        on_complete=lambda session: None,
+    ))
+    # F-33: info первым, потом шаг с вводом — встать на ввод, не глотать его
+    app.register_scene(Scene(
+        id="infomix",
+        entry_commands=("/infomix",),
+        steps=(
+            Step.info("lead", "Сначала прочти.", next="ask"),
+            Step.text("ask", "Твой ответ?"),
+        ),
+    ))
     return app
+
+
+class TestInfoStart(unittest.IsolatedAsyncioTestCase):
+    """F-33: info-шаг как ПЕРВЫЙ шаг сцены авто-завершается на старте."""
+
+    async def test_scene_of_single_info_completes_on_start(self):
+        app = _app()
+        r = await app.handle(IncomingEvent(platform="telegram", user_id="u", chat_id="u", text="/doc"))
+        self.assertEqual([m.text for m in r.messages], ["Политика. Точка."])
+        self.assertIsNone(r.session_after)  # сцена завершилась сразу (F-33)
+
+    async def test_info_then_input_step_parks_on_input(self):
+        app = _app()
+        r = await app.handle(IncomingEvent(platform="telegram", user_id="u", chat_id="u", text="/infomix"))
+        self.assertEqual([m.text for m in r.messages], ["Сначала прочти.", "Твой ответ?"])
+        self.assertEqual(r.session_after.scene_id, "infomix")
+        self.assertEqual(r.session_after.step_id, "ask")
+        r = await app.handle(IncomingEvent(platform="telegram", user_id="u", chat_id="u", text="да"))
+        self.assertIsNone(r.error)  # текст дошёл до шага, не проглочен
 
 
 class TestInfoStep(unittest.IsolatedAsyncioTestCase):

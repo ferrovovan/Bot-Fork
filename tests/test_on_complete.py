@@ -59,11 +59,11 @@ class OnCompleteTests(unittest.IsolatedAsyncioTestCase):
         def boom(s):
             raise RuntimeError("сервис лёг")
         res = await self._finish(boom)
-        self.assertIn("Анкета успешно завершена", res.messages[0].text)
+        self.assertIn("Сценарий завершён", res.messages[0].text)
 
     async def test_no_on_complete_generic_report(self):
         res = await self._finish(None)
-        self.assertIn("Анкета успешно завершена", res.messages[0].text)
+        self.assertIn("Сценарий завершён", res.messages[0].text)
 
 
 if __name__ == "__main__":

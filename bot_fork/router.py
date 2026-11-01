@@ -9,7 +9,7 @@ import inspect
 import logging
 from typing import Dict, List, Optional, Tuple
 from bot_fork.exceptions import ConfigError
-from bot_fork.fsm import FSMEngine, apply_branding
+from bot_fork.fsm import FSMEngine, _action_takes_session, apply_branding
 from bot_fork.models import (
     ErrorInfo,
     HandlerResult,
@@ -248,20 +248,66 @@ class DialogRouter:
         else:
             prefix = ""
         prompt_text = prefix + await start_step.arender_prompt(new_session)
+        first_buttons = await start_step.resolve_buttons(new_session)
 
-        await self.storage.set(new_session)
-        return HandlerResult(
-            messages=(
-                OutgoingMessage(
-                    chat_id=chat_id,
-                    text=apply_branding(prompt_text),
-                    buttons=await start_step.resolve_buttons(new_session),
+        if start_step.input_type != "info":
+            await self.storage.set(new_session)
+            return HandlerResult(
+                messages=(
+                    OutgoingMessage(
+                        chat_id=chat_id,
+                        text=apply_branding(prompt_text),
+                        buttons=first_buttons,
+                    ),
                 ),
-            ),
-            session_after=new_session,
-            clear_session=False,
-            error=None,
-        )
+                session_after=new_session,
+                clear_session=False,
+                error=None,
+            )
+
+        # F-33: стартовый info-шаг не паркуем — прогоняем ту же цепочку F-25,
+        # что и process_step: печатаем, action, по next; упёрлись в конец —
+        # сцена завершена (on_complete сцены), дошли до шага с вводом — встаём.
+        messages = [OutgoingMessage(chat_id=chat_id, text=apply_branding(prompt_text),
+                                    buttons=first_buttons)]
+        cur = start_step
+        for _ in range(10):  # защита от цикла info→info, как в FSM
+            if cur.action is not None:
+                action_args = ("", new_session.data)
+                if _action_takes_session(cur.action):
+                    action_args += (new_session,)
+                res = cur.action(*action_args)
+                if inspect.isawaitable(res):
+                    await res
+            if cur.complete or not cur.next_step_id:
+                await self.storage.clear(lane_key)
+                tail = await self.fsm._completion_messages(scene, new_session, chat_id)
+                return HandlerResult(messages=tuple(messages) + tuple(tail),
+                                     session_after=None, clear_session=True,
+                                     error=None)
+            nxt = scene.get_step(cur.next_step_id)
+            if nxt is None:
+                await self.storage.clear(lane_key)
+                messages.append(OutgoingMessage(
+                    chat_id=chat_id,
+                    text=apply_branding("Сценарий успешно завершён.")))
+                return HandlerResult(messages=tuple(messages), session_after=None,
+                                     clear_session=True, error=None)
+            new_session.step_id = nxt.id
+            messages.append(OutgoingMessage(
+                chat_id=chat_id,
+                text=apply_branding(await nxt.arender_prompt(new_session)),
+                buttons=await nxt.resolve_buttons(new_session)))
+            if nxt.input_type != "info":
+                await self.storage.set(new_session)
+                return HandlerResult(messages=tuple(messages),
+                                     session_after=new_session,
+                                     clear_session=False, error=None)
+            cur = nxt
+        # цепочка длиннее защиты — пакуем сессию на последнем info, не роняем
+        await self.storage.set(new_session)
+        return HandlerResult(messages=tuple(messages), session_after=new_session,
+                             clear_session=False, error=None)
 
     def _resolve_scene_button(self, event: IncomingEvent) -> Optional[SceneDefinition]:
         """

@@ -371,8 +371,10 @@ class FSMEngine:
 
     def _build_completion_report(self, scene: SceneDefinition, data: Dict[str, str]) -> str:
         """Generic-отчёт для сцен без on_complete (F-09: демо-тексты живут в самих сценах)."""
-        # Generic summary
-        lines = ["Анкета успешно завершена. Ваши ответы:"]
+        # Демонстрационный фолбэк: не «анкета» (так назывались все сцены,
+        # включая меню и жалобы), а честный «сценарий». Продукту с ПДн этот
+        # путь не показан: on_complete=lambda session: None (молчание, F-09).
+        lines = ["Сценарий завершён. Ваши ответы:"]
         for k, v in data.items():
             lines.append(f"• {k}: {v}")
         return "\n".join(lines)

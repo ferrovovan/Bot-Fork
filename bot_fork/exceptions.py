@@ -28,6 +28,14 @@ class PlatformError(BotForkError):
     pass
 
 
+class PlatformOperationNotSupported(PlatformError):
+    """
+    F-13: платформа принципиально не умеет операцию (Telegram-бот не создаёт чаты
+    и не добавляет участников). Не путать с PlatformError — это не сбой, это ограничение API.
+    """
+    pass
+
+
 class PlatformTimeoutError(PlatformError):
     """Raised when platform request times out."""
     pass

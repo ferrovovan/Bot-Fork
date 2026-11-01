@@ -37,6 +37,7 @@ class BotForkApp:
         storage: Optional[StateStorage] = None,
         token: Optional[str] = None,
         on_error: Optional[Callable[[Exception, IncomingEvent], object]] = None,
+        on_system_event: Optional[Callable[[IncomingEvent], object]] = None,
         dedupe_capacity: int = 1024,
     ) -> None:
         norm_platform = (platform or "").strip().lower()
@@ -49,7 +50,13 @@ class BotForkApp:
         self.platform = norm_platform
         self.storage = storage or MemoryStateStorage()
         self.registry = SceneRegistry()
-        self.router = DialogRouter(registry=self.registry, storage=self.storage)
+        # F-13: служебные события группы («игрок присоединился») идут в хук, диалог молчит.
+        self.on_system_event = on_system_event
+        self.router = DialogRouter(
+            registry=self.registry,
+            storage=self.storage,
+            on_system_event=self._dispatch_system_event,
+        )
         # F-20: хук на внутренние ошибки; по умолчанию None — поведение как раньше (raise).
         self.on_error = on_error
         # F-18: LRU-кэш event_id для дедупликации повторных callback'ов платформы.
@@ -106,6 +113,17 @@ class BotForkApp:
             token = os.environ.get("VK_BOT_TOKEN")
 
         return cls(platform=raw_platform, token=token)
+
+    async def _dispatch_system_event(self, event: IncomingEvent) -> None:
+        """F-13: гасит ошибки хука — событие о чате не должно ронять рантайм."""
+        if self.on_system_event is None:
+            return
+        try:
+            res = self.on_system_event(event)
+            if inspect.isawaitable(res):
+                await res
+        except Exception as e:
+            logger.error("on_system_event hook failed: %s", e)
 
     def register_scene(self, scene: SceneDefinition) -> None:
         """Registers a dialogue scene definition with the app."""

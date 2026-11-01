@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Any, Callable, Dict, List, Optional
 from bot_fork.adapters.base import EventHandler, PlatformAdapter
-from bot_fork.exceptions import PlatformError
+from bot_fork.exceptions import PlatformError, PlatformOperationNotSupported
 from bot_fork.models import Attachment, Button, IncomingEvent, OutgoingMessage
 
 logger = logging.getLogger("bot_fork.adapters.vk")
@@ -46,6 +46,42 @@ def detect_content_type(raw_message: Any) -> Optional[str]:
     return None
 
 
+# F-13: peer_id групповой беседы в VK = 2000000000 + id беседы
+VK_CHAT_PEER_BASE = 2000000000
+
+# F-13: message_new.action.type → нормализованный system_kind
+_VK_ACTION_KINDS = {
+    "chat_invite_user": "member_joined",
+    "chat_kick_user": "member_left",
+    "chat_title_update": "chat_title_changed",
+    "chat_pin_message": "pinned",
+    "chat_unpin_message": "other",
+}
+
+
+def detect_chat_type(peer_id: Any) -> Optional[str]:
+    """F-13: беседа (peer >= 2e9) или личка."""
+    try:
+        return "group" if int(peer_id) >= VK_CHAT_PEER_BASE else "private"
+    except (TypeError, ValueError):
+        return None
+
+
+def detect_action(raw_message: Any) -> Optional[tuple]:
+    """F-13: служебное действие беседы → (system_kind, member_id) либо None."""
+    if isinstance(raw_message, dict):
+        action = raw_message.get("action")
+    else:
+        action = getattr(raw_message, "action", None)
+    if not action:
+        return None
+    atype = action.get("type") if isinstance(action, dict) else getattr(action, "type", None)
+    if not atype:
+        return None
+    member = action.get("member_id") if isinstance(action, dict) else getattr(action, "member_id", None)
+    return (_VK_ACTION_KINDS.get(str(atype), "other"), str(member) if member else None)
+
+
 class VKAdapter(PlatformAdapter):
     """
     Adapter for VKontakte (ВКонтакte).
@@ -57,6 +93,8 @@ class VKAdapter(PlatformAdapter):
         super().__init__(token)
         self.mock_sender = mock_sender
         self.sent_messages: List[Dict[str, Any]] = []
+        # F-13/F-19: журнал групповых операций (мок-режим и отладка реального)
+        self.chat_ops: List[Dict[str, Any]] = []
         self._api = None
 
     @property
@@ -86,6 +124,18 @@ class VKAdapter(PlatformAdapter):
                 elif isinstance(payload_raw, dict):
                     payload_str = payload_raw.get("button", payload_raw.get("cmd"))
 
+            # F-13: действие в беседе (пригласили/исключили/переименовали) — system-событие
+            action = detect_action(msg)
+            if action is not None:
+                kind, member_id = action
+                return IncomingEvent(
+                    platform="vk",
+                    user_id=member_id or from_id,
+                    chat_id=peer_id,
+                    event_type="system",
+                    system_kind=kind,
+                    chat_type=detect_chat_type(peer_id),
+                )
             text = msg.get("text")
             return IncomingEvent(
                 platform="vk",
@@ -95,6 +145,7 @@ class VKAdapter(PlatformAdapter):
                 payload=payload_str,
                 event_id=str(raw_event.get("event_id", msg.get("id", ""))),
                 content_type=detect_content_type(msg) or ("text" if text else None),
+                chat_type=detect_chat_type(peer_id),
             )
 
         # Object with attributes
@@ -113,6 +164,17 @@ class VKAdapter(PlatformAdapter):
             elif isinstance(payload_raw, dict):
                 payload_str = payload_raw.get("button")
 
+        action = detect_action(raw_event)
+        if action is not None:
+            kind, member_id = action
+            return IncomingEvent(
+                platform="vk",
+                user_id=member_id or from_id,
+                chat_id=peer_id,
+                event_type="system",
+                system_kind=kind,
+                chat_type=detect_chat_type(peer_id),
+            )
         return IncomingEvent(
             platform="vk",
             user_id=from_id,
@@ -121,6 +183,7 @@ class VKAdapter(PlatformAdapter):
             payload=payload_str,
             event_id=str(getattr(raw_event, "id", "")),
             content_type=detect_content_type(raw_event) or ("text" if text else None),
+            chat_type=detect_chat_type(peer_id),
         )
 
     def format_outgoing(self, message: OutgoingMessage) -> Dict[str, Any]:
@@ -158,6 +221,104 @@ class VKAdapter(PlatformAdapter):
 
     async def send(self, message: OutgoingMessage) -> None:
         """Sends OutgoingMessage via mock_sender or VK Bot API."""
+        await self._dispatch_outgoing(message)
+
+    # --- F-13/F-19: групповые операции. VK умеет их все ключом сообщества ---
+
+    def _mock_mode(self) -> bool:
+        return not self.token
+
+    @staticmethod
+    def _peer_to_chat_id(chat_id: str) -> int:
+        """Единый chat_id (для беседы = peer_id) → локальный chat_id для методов messages.*Chat*."""
+        cid = int(chat_id)
+        return cid - VK_CHAT_PEER_BASE if cid >= VK_CHAT_PEER_BASE else cid
+
+    async def create_chat(self, user_ids, title: str) -> str:
+        """
+        F-13: messages.createChat. Возвращает единый chat_id (peer_id беседы).
+        Нюанс VK (проверено по dev.vk.com): с токеном сообщества чат не виден в интерфейсе
+        сообщества, а участников при создании пригласить нельзя — только позже через
+        add_member()/get_invite_link().
+        """
+        if self._mock_mode():
+            self.chat_ops.append({"op": "create_chat", "user_ids": list(user_ids), "title": title})
+            return str(VK_CHAT_PEER_BASE + 1)
+        try:
+            api = await self._ensure_api()
+            chat_id = await api.messages.create_chat(user_ids=",".join(str(u) for u in user_ids), title=title)
+            return str(VK_CHAT_PEER_BASE + int(chat_id))
+        except Exception as e:
+            raise PlatformError(f"VK API messages.createChat failed: {e}") from e
+
+    async def add_member(self, chat_id: str, user_id: str) -> None:
+        """F-13: messages.addChatUser (бот должен быть админом беседы, ошибка 925)."""
+        if self._mock_mode():
+            self.chat_ops.append({"op": "add_member", "chat_id": chat_id, "user_id": user_id})
+            return
+        try:
+            api = await self._ensure_api()
+            await api.messages.add_chat_user(chat_id=self._peer_to_chat_id(chat_id), user_id=int(user_id))
+        except Exception as e:
+            raise PlatformError(f"VK API messages.addChatUser failed: {e}") from e
+
+    async def remove_member(self, chat_id: str, user_id: str) -> None:
+        """F-13: messages.removeChatUser (бот-админ беседы)."""
+        if self._mock_mode():
+            self.chat_ops.append({"op": "remove_member", "chat_id": chat_id, "user_id": user_id})
+            return
+        try:
+            api = await self._ensure_api()
+            await api.messages.remove_chat_user(chat_id=self._peer_to_chat_id(chat_id), member_id=int(user_id))
+        except Exception as e:
+            raise PlatformError(f"VK API messages.removeChatUser failed: {e}") from e
+
+    async def get_invite_link(self, chat_id: str) -> str:
+        """F-13: messages.getInviteLink(peer_id)."""
+        if self._mock_mode():
+            self.chat_ops.append({"op": "get_invite_link", "chat_id": chat_id})
+            return f"https://vk.me/join/mock-{chat_id}"
+        try:
+            api = await self._ensure_api()
+            result = await api.messages.get_invite_link(peer_id=int(chat_id))
+            return str(result.get("link") if isinstance(result, dict) else result)
+        except Exception as e:
+            raise PlatformError(f"VK API messages.getInviteLink failed: {e}") from e
+
+    async def edit_message(self, chat_id: str, message_id: str, message: OutgoingMessage) -> None:
+        """F-19: messages.edit — обновляет текст/клавиатуру отправленного сообщения."""
+        if message.attachment is not None:
+            raise PlatformOperationNotSupported(
+                "VK: редактировать сообщение с вложением нельзя — отправьте новое."
+            )
+        if self._mock_mode():
+            self.chat_ops.append({
+                "op": "edit_message", "chat_id": chat_id, "message_id": message_id,
+                "payload": self.format_outgoing(message),
+            })
+            return
+        formatted = self.format_outgoing(message)
+        try:
+            api = await self._ensure_api()
+            await api.messages.edit(
+                peer_id=int(chat_id),
+                message_id=int(message_id),
+                message=message.text,
+                keyboard=formatted.get("keyboard"),
+                random_id=0,
+            )
+        except Exception as e:
+            raise PlatformError(f"VK API messages.edit failed: {e}") from e
+
+    async def send_ex(self, message: OutgoingMessage) -> Optional[str]:
+        """F-19: отправка с возвратом message_id. Мок возвращает синтетический id."""
+        message_id = await self._dispatch_outgoing(message)
+        if self._mock_mode():
+            return f"vk-mock-{len(self.sent_messages)}"
+        return message_id
+
+    async def _dispatch_outgoing(self, message: OutgoingMessage) -> Optional[str]:
+        """Общая отправка; возвращает platform message_id, если он известен."""
         formatted = self.format_outgoing(message)
         self.sent_messages.append(formatted)
 
@@ -165,29 +326,25 @@ class VKAdapter(PlatformAdapter):
             res = self.mock_sender(formatted)
             if hasattr(res, "__await__"):
                 await res
-            return
+            return None
 
-        # If real token provided and vkbottle is available
         if self.token:
             try:
-                from vkbottle import API
-                if self._api is None:
-                    self._api = API(token=self.token)
+                api = await self._ensure_api()
 
                 attachment_ref = None
                 if message.attachment is not None:
                     # F-01: медиа сначала загружается в VK, потом шлётся ссылкой-вложением
-                    attachment_ref = await self._vk_upload_attachment(
-                        self._api, message
-                    )
+                    attachment_ref = await self._vk_upload_attachment(api, message)
 
-                await self._api.messages.send(
+                result = await api.messages.send(
                     peer_id=int(message.chat_id) if str(message.chat_id).isdigit() else message.chat_id,
                     message=message.text,
                     random_id=0,
                     keyboard=formatted.get("keyboard"),
                     attachment=attachment_ref,
                 )
+                return str(result) if result is not None else None
             except ImportError:
                 logger.info(
                     "vkbottle not installed; message formatted and logged in standalone mode: %s",
@@ -195,6 +352,16 @@ class VKAdapter(PlatformAdapter):
                 )
             except Exception as e:
                 raise PlatformError(f"VK API send failed: {e}") from e
+        return None
+
+    async def _ensure_api(self):
+        if self._api is None:
+            try:
+                from vkbottle import API
+            except ImportError as e:
+                raise PlatformError("vkbottle must be installed for live VK chat operations") from e
+            self._api = API(token=self.token)
+        return self._api
 
     async def _vk_upload_attachment(self, api: Any, message: OutgoingMessage) -> str:
         """

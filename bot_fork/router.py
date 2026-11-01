@@ -68,13 +68,25 @@ class DialogRouter:
         registry: SceneRegistry,
         storage: StateStorage,
         fsm_engine: Optional[FSMEngine] = None,
+        on_system_event=None,
     ) -> None:
         self.registry = registry
         self.storage = storage
         self.fsm = fsm_engine or FSMEngine()
+        # F-13: callback(event) -> None | Awaitable, куда роутер отдаёт служебные события
+        # («игрок присоединился», «бота добавили в чат»). Диалог на них не запускается.
+        self.on_system_event = on_system_event
 
     async def route(self, event: IncomingEvent) -> HandlerResult:
         """Processes an incoming normalized event."""
+        # F-13: служебные события группы не попадают в диалог вовсе — только в хук.
+        if event.event_type == "system":
+            if self.on_system_event is not None:
+                res = self.on_system_event(event)
+                if inspect.isawaitable(res):
+                    await res
+            return HandlerResult()
+
         text = (event.text or "").strip()
         command_token = text.split()[0].lower() if text.startswith("/") else ""
 

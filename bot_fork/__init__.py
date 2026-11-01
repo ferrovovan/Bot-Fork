@@ -13,6 +13,7 @@ from bot_fork.exceptions import (
     ConfigError,
     InvalidInputError,
     PlatformError,
+    PlatformOperationNotSupported,
     PlatformTimeoutError,
     StorageError,
 )
@@ -32,7 +33,7 @@ from bot_fork.scene import Scene, SceneDefinition, Step, StepDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
 from bot_fork.sql_storage import SqlStateStorage
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 __all__ = [
     "BotForkApp",
     "Scene",
@@ -62,6 +63,7 @@ __all__ = [
     "InvalidInputError",
     "StorageError",
     "PlatformError",
+    "PlatformOperationNotSupported",
     "PlatformTimeoutError",
     "apply_branding",
 ]

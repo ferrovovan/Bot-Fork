@@ -67,6 +67,15 @@ class IncomingEvent:
     event_id: Optional[str] = None
     # F-21: тип контента входящего сообщения — text|photo|sticker|voice|video|document|other
     content_type: Optional[str] = None
+    # F-13: тип чата — private|group|supergroup|channel (None — неизвестно, напр. в старых моках)
+    chat_type: Optional[str] = None
+    # F-13: "message" — обычный диалог; "system" — служебное событие группы.
+    # Роутер гасит system-события (бот не отвечает на «игрок присоединился»);
+    # охотники за событиями подписываются на BotForkApp(on_system_event=...).
+    event_type: str = "message"
+    # F-13: вид служебного события: member_joined|member_left|bot_added|bot_removed|
+    # chat_title_changed|pinned|other
+    system_kind: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.platform not in ("telegram", "vk"):
@@ -75,6 +84,8 @@ class IncomingEvent:
             raise ValueError("user_id cannot be empty")
         if not self.chat_id:
             raise ValueError("chat_id cannot be empty")
+        if self.event_type not in ("message", "system"):
+            raise ValueError(f"Invalid event_type '{self.event_type}'. Allowed: 'message', 'system'")
         # Normalize text: strip outer whitespace
         if self.text is not None:
             self.text = self.text.strip()
@@ -98,6 +109,9 @@ class IncomingEvent:
             "payload": self.payload,
             "event_id": self.event_id,
             "content_type": self.content_type,
+            "chat_type": self.chat_type,
+            "event_type": self.event_type,
+            "system_kind": self.system_kind,
         }
 
 

@@ -16,6 +16,19 @@
 - **Высокая производительность (NFR-01)**: Среднее время обработки входящего события < 0.1 мс (бенчмарк 100 сессий проходит за ~6 мс при лимите 1.0 с).
 - **Свободная лицензия**: Apache-2.0.
 
+### Хроника расширений (fork roadmap)
+
+- **v1.1** — прикладной рантайм: `app.send` (F-11), async-валидаторы и `Step.action` (F-04),
+  `SqlStateStorage` (F-02/03), дедупликация событий (F-18), хук `on_error` (F-20), брендинг-флаг (F-16).
+- **v1.2** — вложения `Attachment` в `OutgoingMessage` (F-01, TG photo/doc, VK upload), `content_type`
+  события (F-21).
+- **v1.3** — запуск сцены из кнопки: payload `scene:<id>` (F-23); контекст сессии в `action(value, data, session)` (F-04).
+- **v1.4** — групповые чаты (WP3): `chat_type` и `event_type/system_kind` в `IncomingEvent` (F-13),
+  хук `on_system_event` (служебные события не будят диалог), операции адаптеров
+  `create_chat`/`add_member`/`remove_member`/`get_invite_link` (F-13) и `send_ex`/`edit_message` (F-19).
+  VK умеет всё; Telegram — план Б: `create_chat`/`add_member` бросают `PlatformOperationNotSupported`
+  (чат создаёт админ, бот раздаёт `get_invite_link`).
+
 [![Build Wheel & CI](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml/badge.svg)](https://github.com/ferrovovan/Bot-Fork/actions/workflows/build-wheel.yml)
 [![Release](https://img.shields.io/github/v/release/ferrovovan/Bot-Fork?include_prereleases&label=release)](https://github.com/ferrovovan/Bot-Fork/releases)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)

@@ -6,7 +6,7 @@ Tests get, set, clear, and isolation across 100 concurrent SessionKeys.
 import asyncio
 import unittest
 from bot_fork.models import SessionKey, UserSession
-from bot_fork.storage import MemoryStateStorage
+from bot_fork.storage import MemoryStateStorage, StateStorage
 
 
 class TestStorage(unittest.IsolatedAsyncioTestCase):
@@ -63,6 +63,39 @@ class TestStorage(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(res_vk.data["val"], f"vk_{i}")
             self.assertEqual(res_tg.session_key.platform, "telegram")
             self.assertEqual(res_vk.session_key.platform, "vk")
+
+
+class TestListSceneF34(unittest.IsolatedAsyncioTestCase):
+    """F-34: list_scene — снимок сессий на сцене для фоновых саметчеров продукта."""
+
+    async def test_memory_lists_only_target_scene(self):
+        storage = MemoryStateStorage()
+        k1 = SessionKey(platform="telegram", user_id="1", chat_id="1")
+        k2 = SessionKey(platform="telegram", user_id="2", chat_id="2")
+        await storage.set(UserSession(session_key=k1, scene_id="survey", step_id="s2",
+                                      data={"x": "1"}))
+        await storage.set(UserSession(session_key=k2, scene_id="menu", step_id="m", data={}))
+
+        found = await storage.list_scene("survey")
+        self.assertEqual([s.session_key.user_id for s in found], ["1"])
+        self.assertEqual(found[0].step_id, "s2")
+        self.assertEqual(found[0].data, {"x": "1"})
+        # ключ из снимка годится для clear — саметчер чистит по нему
+        await storage.clear(found[0].session_key)
+        self.assertIsNone(await storage.get(k1))
+
+    async def test_base_storage_default_empty(self):
+        class _Dummy(StateStorage):
+            async def get(self, key):
+                return None
+
+            async def set(self, session):
+                pass
+
+            async def clear(self, key):
+                pass
+
+        self.assertEqual(await _Dummy().list_scene("survey"), [])
 
 
 if __name__ == "__main__":

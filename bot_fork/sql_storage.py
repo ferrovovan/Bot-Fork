@@ -192,6 +192,34 @@ class SqlStateStorage(StateStorage):
         finally:
             cur.close()
 
+    def _list_scene_sync(self, scene_id: str) -> list:
+        cur = self._conn.cursor()
+        try:
+            cur.execute(
+                f"SELECT platform, user_id, chat_id, lane, scene_id, step_id, data, updated_at "
+                f"FROM {TABLE_NAME} WHERE scene_id=?",
+                (scene_id,),
+            )
+            rows = cur.fetchall()
+        finally:
+            cur.close()
+        out = []
+        for platform, user_id, chat_id, lane, sid, step_id, data_json, updated_at in rows:
+            try:
+                data = json.loads(data_json)
+            except (ValueError, TypeError) as e:
+                raise StorageError(f"Повреждённые данные сессии {platform}/{user_id}: {e}") from e
+            try:
+                ts = datetime.fromisoformat(updated_at)
+            except (ValueError, TypeError):
+                ts = datetime.now(timezone.utc)
+            out.append(UserSession(
+                session_key=SessionKey(platform=platform, user_id=user_id,
+                                       chat_id=chat_id, lane=lane),
+                scene_id=sid, step_id=step_id, data=data, updated_at=ts,
+            ))
+        return out
+
     # ---------- интерфейс StateStorage ----------
 
     async def get(self, key: SessionKey) -> Optional[UserSession]:
@@ -216,6 +244,11 @@ class SqlStateStorage(StateStorage):
         """Число активных сессий (как у MemoryStateStorage)."""
         async with self._lock:
             return await asyncio.to_thread(self._count_sync)
+
+    async def list_scene(self, scene_id: str) -> list:
+        """F-34: снимок сессий, припаркованных на сцене (фоновый TTL-саметчер)."""
+        async with self._lock:
+            return await asyncio.to_thread(self._list_scene_sync, scene_id)
 
     def close(self) -> None:
         """Закрыть соединение (sqlite; для внешних connection_factory — на усмотрение продукта)."""

@@ -30,6 +30,12 @@ class StateStorage(ABC):
         """Clear active user session for key (idempotent)."""
         pass
 
+    async def list_scene(self, scene_id: str) -> list:
+        """F-34: снимок сессий, припаркованных на сцене scene_id (для фоновых
+        саметчеров продукта — TTL брошенных анкет). Необязательная возможность:
+        базовый класс отвечает пустым списком — «сканировать нечего»."""
+        return []
+
 
 class MemoryStateStorage(StateStorage):
     """
@@ -67,3 +73,15 @@ class MemoryStateStorage(StateStorage):
         """Return total active session count."""
         async with self._lock:
             return len(self._sessions)
+
+    async def list_scene(self, scene_id: str) -> list:
+        """F-34: сессии на сцене scene_id (снимки, updated_at сохраняется)."""
+        async with self._lock:
+            return [
+                UserSession(
+                    session_key=s.session_key, scene_id=s.scene_id,
+                    step_id=s.step_id, data=dict(s.data), updated_at=s.updated_at,
+                )
+                for s in self._sessions.values()
+                if s.scene_id == scene_id
+            ]

@@ -137,3 +137,30 @@ class SqliteDsnTests(unittest.TestCase):
     def test_file_url_opens(self):
         st = SqlStateStorage(dsn=f"sqlite:///{os.path.join(tempfile.mkdtemp(), 's.db')}")
         self.assertTrue(os.path.exists(f"{st._dsn}".replace("sqlite:///", "")))
+
+
+class TestListSceneSqlF34(unittest.IsolatedAsyncioTestCase):
+    """F-34: SqlStateStorage.list_scene — снимок сессий сцены (шаг TTL-саметчера)."""
+
+    async def test_filters_by_scene(self):
+        storage = SqlStateStorage(dsn=":memory:")
+        await storage.set(UserSession(session_key=_key(user_id="1", chat_id="1"),
+                                      scene_id="survey", step_id="s2", data={"x": "1"}))
+        await storage.set(UserSession(session_key=_key(user_id="2", chat_id="2"),
+                                      scene_id="survey", step_id="s5", data={}))
+        await storage.set(UserSession(session_key=_key(user_id="3", chat_id="3"),
+                                      scene_id="menu", step_id="m", data={}))
+
+        found = await storage.list_scene("survey")
+        self.assertEqual({s.session_key.user_id for s in found}, {"1", "2"})
+        snap = next(s for s in found if s.session_key.user_id == "1")
+        self.assertEqual(snap.step_id, "s2")
+        self.assertEqual(snap.data["x"], "1")
+        self.assertIsNotNone(snap.updated_at.tzinfo)
+
+        await storage.clear(snap.session_key)  # ключ из снимка — рабочий
+        self.assertEqual(await storage.count(), 2)
+
+    async def test_empty_scene(self):
+        storage = SqlStateStorage(dsn=":memory:")
+        self.assertEqual(await storage.list_scene("nope"), [])

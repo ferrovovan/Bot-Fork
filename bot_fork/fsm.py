@@ -6,6 +6,7 @@ Validates input, transitions states, accumulates survey data, and appends mandat
 from __future__ import annotations
 
 import inspect
+import os
 from typing import Dict, List, Optional, Tuple
 from bot_fork.exceptions import ConfigError
 from bot_fork.models import (
@@ -19,6 +20,7 @@ from bot_fork.models import (
 from bot_fork.scene import SceneDefinition, StepDefinition
 
 BRANDING_SUFFIX = ""
+BRANDING_WATERMARK = "\n\nMade with Bot Fork"
 MAX_MESSAGE_LENGTH = 4096
 
 
@@ -26,8 +28,11 @@ def apply_branding(text: str) -> str:
     """
     Validates message length limit (4096 characters).
     Proprietary watermark suffix removed in version 1.0 (clean text).
+    F-16: env BOT_FORK_BRANDING=on/off (default off) — явный флаг возврата водного знака.
     """
     clean_text = text.rstrip()
+    if os.environ.get("BOT_FORK_BRANDING", "off").strip().lower() in ("on", "1", "true"):
+        clean_text = clean_text + BRANDING_WATERMARK
     if len(clean_text) > MAX_MESSAGE_LENGTH:
         raise ConfigError(
             f"Message exceeds {MAX_MESSAGE_LENGTH} characters limit (len={len(clean_text)})"

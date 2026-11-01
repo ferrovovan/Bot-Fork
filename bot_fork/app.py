@@ -6,15 +6,17 @@ Enforces single-platform selection, configuration validation, and orchestrates s
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 import time
-from typing import Optional, Tuple, Union
+from collections import OrderedDict
+from typing import Callable, Optional, Tuple, Union
 from bot_fork.adapters.base import PlatformAdapter
 from bot_fork.adapters.telegram import TelegramAdapter
 from bot_fork.adapters.vk import VKAdapter
 from bot_fork.exceptions import ConfigError
-from bot_fork.models import Button, HandlerResult, IncomingEvent, OutgoingMessage
+from bot_fork.models import Button, ErrorInfo, HandlerResult, IncomingEvent, OutgoingMessage
 from bot_fork.router import DialogRouter, SceneRegistry
 from bot_fork.scene import SceneDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
@@ -34,6 +36,8 @@ class BotForkApp:
         adapter: Optional[PlatformAdapter] = None,
         storage: Optional[StateStorage] = None,
         token: Optional[str] = None,
+        on_error: Optional[Callable[[Exception, IncomingEvent], object]] = None,
+        dedupe_capacity: int = 1024,
     ) -> None:
         norm_platform = (platform or "").strip().lower()
         if norm_platform not in ("telegram", "vk"):
@@ -46,6 +50,11 @@ class BotForkApp:
         self.storage = storage or MemoryStateStorage()
         self.registry = SceneRegistry()
         self.router = DialogRouter(registry=self.registry, storage=self.storage)
+        # F-20: хук на внутренние ошибки; по умолчанию None — поведение как раньше (raise).
+        self.on_error = on_error
+        # F-18: LRU-кэш event_id для дедупликации повторных callback'ов платформы.
+        self._dedupe_capacity = max(1, int(dedupe_capacity))
+        self._seen_event_ids: "OrderedDict[str, None]" = OrderedDict()
 
         if adapter is not None:
             if adapter.platform_name != self.platform:
@@ -111,6 +120,17 @@ class BotForkApp:
         and returns HandlerResult. Tokens and user message text are never logged.
         """
         start_time = time.perf_counter()
+
+        # F-18: повтор того же события (double callback от платформы) — молча гасим.
+        event_id = (event.event_id or "").strip()
+        if event_id:
+            if event_id in self._seen_event_ids:
+                logger.info("Duplicate event ignored | platform=%s", self.platform)
+                return HandlerResult()
+            self._seen_event_ids[event_id] = None
+            while len(self._seen_event_ids) > self._dedupe_capacity:
+                self._seen_event_ids.popitem(last=False)
+
         try:
             result = await self.router.route(event)
             duration_ms = (time.perf_counter() - start_time) * 1000.0
@@ -131,6 +151,23 @@ class BotForkApp:
         except Exception as e:
             duration_ms = (time.perf_counter() - start_time) * 1000.0
             logger.error("Internal error handling event: %s | duration=%.2fms", e, duration_ms)
+            # F-20: если задан хук — цикл не падает, ошибка уходит продукту.
+            if self.on_error is not None:
+                try:
+                    hook_res = self.on_error(e, event)
+                    if inspect.isawaitable(hook_res):
+                        await hook_res
+                except Exception as hook_exc:  # хук не должен ронять рантайм
+                    logger.error("on_error hook failed: %s", hook_exc)
+                return HandlerResult(
+                    messages=(
+                        OutgoingMessage(
+                            chat_id=event.chat_id,
+                            text="Произошла внутренняя ошибка. Попробуйте ещё раз позже.",
+                        ),
+                    ),
+                    error=ErrorInfo(code="INTERNAL_ERROR", message=str(e), retryable=True),
+                )
             raise
 
     async def send(

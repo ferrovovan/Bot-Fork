@@ -20,3 +20,6 @@ npm-debug.log*
 # Архивы и ОС-мусор
 *.zip
 .DS_Store
+
+# Секреты: живые токены не коммитить
+Valid tokens.md

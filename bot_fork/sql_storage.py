@@ -22,6 +22,19 @@ from bot_fork.storage import StateStorage
 TABLE_NAME = "botfork_sessions"
 
 
+def _sqlite_path(dsn: str) -> str:
+    """DSN → путь файла sqlite3: понимает `sqlite:///rel.db`, `sqlite:////abs.db`,
+    `sqlite+aiosqlite://...` и честный путь/:memory:. Это фикс v1.8.1: без нарезки
+    префиксов sqlite3 читал «sqlite:///dev.db» как путь в несуществующей папке."""
+    for scheme in ("sqlite+aiosqlite://", "sqlite://"):
+        if dsn.startswith(scheme):
+            rest = dsn[len(scheme):]
+            # sqlite:////abs → /abs; sqlite:///rel → rel; sqlite:///:memory: → :memory:
+            return rest[1:] if rest.startswith("/") else rest
+    return dsn
+
+
+
 class SqlStateStorage(StateStorage):
     """
     StateStorage поверх SQL. По умолчанию — sqlite3 (файл или :memory:).
@@ -38,8 +51,9 @@ class SqlStateStorage(StateStorage):
         if connection_factory is not None:
             self._conn = connection_factory()
         else:
+            path = _sqlite_path(dsn)
             try:
-                self._conn = sqlite3.connect(dsn, check_same_thread=False)
+                self._conn = sqlite3.connect(path, check_same_thread=False)
             except sqlite3.Error as e:
                 raise StorageError(f"Не удалось открыть SQLite '{dsn}': {e}") from e
         self._lock = asyncio.Lock()

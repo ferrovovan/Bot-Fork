@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from bot_fork.models import SessionKey, UserSession
-from bot_fork.sql_storage import SqlStateStorage
+from bot_fork.sql_storage import SqlStateStorage, _sqlite_path
 
 
 def _key(platform="telegram", user_id="101", chat_id="101") -> SessionKey:
@@ -121,3 +121,19 @@ class TestSqlStateStorage(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SqliteDsnTests(unittest.TestCase):
+    """v1.8.1: DSN вида sqlite:///rel, sqlite:////abs, sqlite+aiosqlite://…"""
+
+    def test_dsn_forms(self):
+        self.assertEqual(_sqlite_path("sqlite:///dev.db"), "dev.db")
+        self.assertEqual(_sqlite_path("sqlite+aiosqlite:///dev.db"), "dev.db")
+        self.assertEqual(_sqlite_path("sqlite:////tmp/x.db"), "/tmp/x.db")
+        self.assertEqual(_sqlite_path("sqlite:///:memory:"), ":memory:")
+        self.assertEqual(_sqlite_path(":memory:"), ":memory:")
+        self.assertEqual(_sqlite_path("/plain.db"), "/plain.db")
+
+    def test_file_url_opens(self):
+        st = SqlStateStorage(dsn=f"sqlite:///{os.path.join(tempfile.mkdtemp(), 's.db')}")
+        self.assertTrue(os.path.exists(f"{st._dsn}".replace("sqlite:///", "")))

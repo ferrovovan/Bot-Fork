@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "bot-fork"
 version = "1.1.0"
 authors = [
-  { name = "Bot Fork Team", email = "none" },
+  { name = "Bot Fork Team" },
 ]
 description = "Python-библиотека прототипирования диалоговых сцен для Telegram и ВКонтакте"
 readme = "README.md"
@@ -46,3 +46,6 @@ dev = [
 [project.urls]
 "Homepage" = "https://github.com/ferrovovan/Bot-Fork"
 "Documentation" = "https://github.com/ferrovovan/Bot-Fork#readme"
+
+[tool.setuptools]
+packages = ["bot_fork", "bot_fork.adapters"]

@@ -103,6 +103,24 @@ class TestFSMEngine(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.session_after.step_id, "branch")
         self.assertNotIn("branch", result.session_after.data)
 
+    async def test_choice_step_free_text_calls_back_not_scolds(self):
+        # F-30: побег в свободный текст — зовём обратно кнопкой, это не «нарушение»
+        session = UserSession(
+            session_key=self.key,
+            scene_id="test_flow",
+            step_id="branch",
+            data={"name": "Алексей"},
+        )
+        event = IncomingEvent(platform="telegram", user_id="101", chat_id="101", text="basic")
+
+        result = await self.fsm.process_step(event, session, self.scene)
+
+        self.assertEqual(result.error.code, "NEED_BUTTON")
+        self.assertIn("кнопкой", result.messages[0].text)
+        # клавиатура текущего шага протянута заново — путь назад очевиден
+        self.assertTrue(result.messages[0].buttons)
+        self.assertEqual(result.session_after.step_id, "branch")
+
     async def test_complete_step_clears_session(self):
         session = UserSession(
             session_key=self.key,

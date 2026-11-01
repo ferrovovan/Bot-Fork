@@ -181,21 +181,26 @@ class FSMEngine:
 
             allowed_values = {b.value for b in step_buttons}
             if not chosen_val or chosen_val not in allowed_values:
+                # F-30: два разных побега — и разные слова. Прислан payload, но
+                # его нет среди живых кнопок → кнопка устарела. Текст без payload
+                # → игрок ушёл в свободный ввод: его зовут обратно, а не ругают.
+                if event.payload:
+                    reply = "Эта кнопка уже недействительна. Повторите выбор."
+                    code = "INVALID_BUTTON"
+                else:
+                    reply = "Давайте так: выберите вариант кнопкой ниже 👇 Я их понимаю лучше всего."
+                    code = "NEED_BUTTON"
                 return HandlerResult(
                     messages=(
                         OutgoingMessage(
                             chat_id=event.chat_id,
-                            text=apply_branding("Эта кнопка уже недействительна. Повторите выбор."),
+                            text=apply_branding(reply),
                             buttons=step_buttons,
                         ),
                     ),
                     session_after=session,
                     clear_session=False,
-                    error=ErrorInfo(
-                        code="INVALID_BUTTON",
-                        message="Эта кнопка уже недействительна. Повторите выбор.",
-                        retryable=True,
-                    ),
+                    error=ErrorInfo(code=code, message=reply, retryable=True),
                 )
 
             value_to_save = chosen_val

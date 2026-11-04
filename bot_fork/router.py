@@ -58,6 +58,17 @@ class SceneRegistry:
             return self._scenes.get(scene_id)
         return None
 
+    def list_scenes(self) -> Tuple[str, ...]:
+        """F-35: публичные id всех зарегистрированных сцен, по возрастанию.
+
+        Детерминированно (та же конвенция сортировки, что у
+        `list_entry_commands`), состояние реестра не меняет. Только id:
+        `title` в модели сцены нет, а «на каком шаге игрок» — состояние
+        хранилища (`StateStorage.list_scene`, F-34), не знание реестра.
+        Форма контракта — RFC-06 §1 (`ARCH-CHANGE: RfI-06-1`).
+        """
+        return tuple(sorted(self._scenes))
+
     def list_entry_commands(self) -> List[str]:
         return sorted(list(self._command_map.keys()))
 

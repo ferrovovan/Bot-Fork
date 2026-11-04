@@ -21,8 +21,8 @@
 
 ## Публичный контракт
 
-- **`SceneRegistry`**: `register`, `get_scene`, `resolve_command`,
-  `list_entry_commands`, `commands_for` (F-32).
+- **`SceneRegistry`**: `register`, `get_scene`, `resolve_command`, `list_scenes()` —
+  кортеж id зарегистрированных сцен по возрастанию (F-35; состояние сцен — в `StateStorage` (F-34), не здесь), `list_entry_commands`, `commands_for` (F-32).
 - **`DialogRouter(registry, storage, fsm_engine?, on_system_event?, cancel_commands?)`**;
   `route(event) → HandlerResult`.
 - **`begin_scene(scene, lane_key, chat_id, had_session?, initial_data?)`** —
@@ -50,13 +50,15 @@
    `restart_text` (`None` — общий, `""` — без префикса) (F-27) — `tests/test_router.py`.
 9. Info-шаг стартовым шагом проходит цепочкой без зависания (F-33) —
    `tests/test_info_step.py`.
+10. `list_scenes()` перечисляет id детерминированно (по возрастанию) и не меняет
+    состояние реестра (F-35, `ARCH-CHANGE: RfI-06-1`) — `tests/test_registry.py`.
 
 Где это лежит — [INTERNAL.md](INTERNAL.md).
 
 ## Запреты
 
-- Лезть в приватные поля реестра из продукта — публичный перечислитель сцен
-  заказан (F-35), обход через `getattr` — симптом, а не решение.
+- Лезть в приватные поля реестра из продукта: перечислитель публичен —
+  `list_scenes()` (F-35); обход через `getattr` — симптом, а не решение.
 - Продуктовая лексика в ответах: подсказки — из реестра, а не из головы (урок F-32).
 - Запуск сцены не в её `lane`.
 
@@ -64,4 +66,4 @@
 
 `tests/test_router.py` (8), `tests/test_scene_button.py` (5),
 `tests/test_cancel_commands.py` (5), `tests/test_lanes.py` (дорожки),
-системные события `tests/test_groups.py`. Число — [INTERNAL.md](INTERNAL.md).
+системные события `tests/test_groups.py`, `tests/test_registry.py` (F-35). Число — [INTERNAL.md](INTERNAL.md).

@@ -1,16 +1,17 @@
 # scenes/INTERNAL.md — Internal Arch: как сцены и шаги устроены сейчас
 
-**Компонент:** `bot_fork/scene.py`, `bot_fork/builder.py` · **Снимок:** 2026-11-04,
-HEAD `c386469` (1.12.1) · **Правит:** координатор (пакеты движка)
+**Компонент:** `bot_fork/scene.py`, `bot_fork/builder.py` · **Снимок:** 2026-11-04
+(F-07 `seed`/`requires` — v1.12.10; ранее HEAD `c386469`, 1.12.1) ·
+**Правит:** координатор (пакеты движка)
 
 ## Карта файлов
 
 | Файл | Что внутри | Строк |
 |---|---|---|
-| `bot_fork/scene.py` | `StepDefinition`, фабрики `Step.text/info/choice`, `SceneDefinition`, фабрика `Scene`, динамические prompt/клавиатуры | 296 |
+| `bot_fork/scene.py` | `StepDefinition` (+`requires` F-07), фабрики `Step.text/info/choice`, `SceneDefinition` (+`seed` F-07, `resolve_seed`, `landing_step`), фабрика `Scene`, динамические prompt/клавиатуры | 425 |
 | `bot_fork/builder.py` | `ButtonBuilder.text/keyboard` — единая валидация кнопок и клавиатур | 43 |
 
-Итого 2 файла, 339 строк.
+Итого 2 файла, 468 строк.
 
 ## Ключевые решения (и почему так)
 
@@ -24,6 +25,9 @@ HEAD `c386469` (1.12.1) · **Правит:** координатор (пакет�
 | Исключение из prompt/клавиатуры → `ConfigError`, а не падение роутера | сбой продукта — шум диалога, а не смерть процесса (F-29) | `scene.py:75-98` |
 | `Scene(...)` нормализует команды (`strip`), `start_step_id` по умолчанию — первый шаг | короткий контракт разработчика; регистр команд доводит роутер | `scene.py:285-296` |
 | Кнопки `scene:<id>` не требуют перехода | запуск перехватывает `DialogRouter` до FSM (F-23) | `scene.py:253-261` |
+| `SceneDefinition.seed` — dict или callable (`UserSession` → dict); dict-посев в JSON-домене F-03 проверяется на построении, callable-результат — при входе (`resolve_seed`), ошибка/не-dict/вне-домена → `ConfigError` | предзаполнение при любом входе, в т.ч. командном (F-07, RfI-06-3); значение вне домена — не тихая пустая анкета | `scene.py:263,271-291,331-366` |
+| `StepDefinition.requires` + `meets_requires` — callable от данных → `bool` (sync/async, арность адаптируется); нелогичный возврат/исключение → `ConfigError` | условие конфигурации, не ввод игрока; проверка — при посадке, не в середине шага (F-07, RfI-06-3) | `scene.py:55,60-61,117-137` |
+| `SceneDefinition.landing_step` — первый выполнимый шаг от точки входа; пропуск по `next_step_id`, конец цепочки → `None` (завершение), цикл пропуска → `ConfigError` | один носитель правила пропуска для `begin_scene` и FSM; защита от взаимно указывающих невыполнимых шагов (F-07, RfI-06-3) | `scene.py:369-399` |
 
 ## Ограничения и долги
 
@@ -37,8 +41,9 @@ HEAD `c386469` (1.12.1) · **Правит:** координатор (пакет�
 
 ```bash
 python3 -m pytest tests/test_scenes.py tests/test_dynamic_prompt.py \
-    tests/test_dynamic_buttons.py tests/test_info_step.py -q
-python3 -m pytest tests -q        # база: 158 passed
+    tests/test_dynamic_buttons.py tests/test_info_step.py \
+    tests/test_seed_requires.py -q
+python3 -m pytest tests -q        # база: 211 passed + 7 subtests (замер 2026-11-04, v1.12.10)
 ```
 
 ## Владелец и правила обновления

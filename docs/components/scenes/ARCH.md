@@ -23,12 +23,19 @@
 
 - **`StepDefinition`**: `id`, `prompt` (строка или функция, синхронная/async),
   `input_type` (`text|choice|info`), `buttons` (кортеж или функция), `validator`,
-  `transitions`, `next_step_id`, `complete`, `action`.
+  `transitions`, `next_step_id`, `complete`, `action`,
+  `requires` (F-07, `ARCH-CHANGE: RfI-06-3`: условие применимости шага —
+  callable от данных сессии (арность адаптируется, sync/async), обязанный
+  вернуть `bool`; при посадке движок пропускает шаг с невыполненным условием
+  по `next_step_id`, стека «назад» нет — снято D-18/D-19).
 - **Фабрики**: `Step.text`, `Step.info` (показывает и идёт дальше без ввода),
   `Step.choice`; `ButtonBuilder.text/keyboard` — единая проверка кнопок.
 - **`SceneDefinition` / фабрика `Scene(...)`**: `id`, `entry_commands`,
   `start_step_id` (по умолчанию первый шаг), `steps`, `lane` (`user|system`, F-06),
-  `on_complete` (F-09), `restart_text` (F-27).
+  `on_complete` (F-09), `restart_text` (F-27),
+  `seed` (F-07, `ARCH-CHANGE: RfI-06-3`: предзаполнение `data` при любом входе —
+  dict или callable (`UserSession` → dict, sync/async); применяется движком до
+  первого шага, значения — JSON-домен F-03; платформа о посеве не знает).
 
 ## Инварианты
 
@@ -47,6 +54,14 @@
 6. Динамическая клавиатура проходит ту же проверку, что статическая (≤4,
    уникальные value) — `tests/test_dynamic_buttons.py`.
 7. `lane` сцены — только `user|system` — `tests/test_lanes.py`.
+8. `seed` — `None`, dict (JSON-домен F-03 проверяется на построении сцены) или
+   callable; возврат callable — dict в JSON-домене F-03; исключение продукта,
+   возврат не-dict и значение вне домена — `ConfigError`, а не тихая пустая
+   анкета (F-07, `ARCH-CHANGE: RfI-06-3`) — `tests/test_seed_requires.py`.
+9. `requires` — callable, возвращающий `bool` (sync/async); нелогичный возврат
+   и исключение продукта — `ConfigError`; невыполнимый шаг при посадке
+   пропускается по `next_step_id`; взаимно указывающие невыполнимые шаги —
+   `ConfigError` (F-07, `ARCH-CHANGE: RfI-06-3`) — `tests/test_seed_requires.py`.
 
 Где это лежит (файл и строки) — [INTERNAL.md](INTERNAL.md).
 
@@ -62,4 +77,6 @@
 
 `tests/test_scenes.py` (7), `tests/test_dynamic_prompt.py` (6),
 `tests/test_dynamic_buttons.py` (6), `tests/test_info_step.py` (6, вместе с
-fsm/router), `tests/test_lanes.py` (проверка lane сцены). Число — [INTERNAL.md](INTERNAL.md).
+fsm/router), `tests/test_lanes.py` (проверка lane сцены),
+`tests/test_seed_requires.py` (F-07: форма `seed`/`requires`, вместе с router/fsm).
+Число — [INTERNAL.md](INTERNAL.md).

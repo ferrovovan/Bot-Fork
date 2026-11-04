@@ -239,9 +239,24 @@ class DialogRouter:
         chat_id: str,
         had_session: bool = False,
         initial_data: Optional[Dict] = None,
+        at_step: Optional[str] = None,
     ) -> HandlerResult:
-        """Старт/перезапуск сцены в заданной полосе (общий путь для команд, кнопок и F-22)."""
-        start_step = scene.get_step(scene.start_step_id)
+        """Старт/перезапуск сцены в заданной полосе (общий путь для команд, кнопок и F-22).
+
+        F-07 (RfI-06-3): `at_step` — приземление «как если дошли»: любой шаг сцены
+        вместо `start_step_id`, prompt и кнопки целевого шага, инфо-цепочка
+        проигрывается; шага нет в сцене — `ConfigError`. Посев `scene.seed`
+        выполняется при любом входе (команда, кнопка, программный старт) до
+        первого шага; явный `initial_data` старшего посева. Шаги с невыполненным
+        `requires` пропускаются по `next_step_id`; если недоступен весь путь от
+        входа — нейтральное завершение без парковки сессии.
+        """
+        if at_step is not None and scene.get_step(at_step) is None:
+            raise ConfigError(
+                f"Scene '{scene.id}' at_step '{at_step}' does not exist in steps"
+            )
+        target_step_id = at_step if at_step is not None else scene.start_step_id
+        start_step = scene.get_step(target_step_id)
         if start_step is None:
             return HandlerResult(
                 messages=(
@@ -257,11 +272,27 @@ class DialogRouter:
         new_session = UserSession(
             session_key=lane_key,
             scene_id=scene.id,
-            step_id=scene.start_step_id,
+            step_id=target_step_id,
             # F-03: initial_data несёт JSON-совместимые значения (в т.ч. вложенные
             # list/dict) — копируем глубоко, чтобы вызывающий код не mutable-ил сессию.
             data=copy.deepcopy(initial_data) if initial_data else {},
         )
+        # F-07 (RfI-06-3): посев данных при любом входе — команда, кнопка scene:<id>,
+        # программный старт (закрывает дыру командного входа: initial_data была
+        # недоступна игроку, набравшему команду). Явные данные вызывающего старшего.
+        seeded = await scene.resolve_seed(new_session)
+        if seeded:
+            new_session.data = {**seeded, **new_session.data}
+        # F-07: невыполнимый шаг — не место посадки; пропускаем по next_step_id.
+        start_step = await scene.landing_step(start_step, new_session.data)
+        if start_step is None:
+            # От точки входа вся сцена недоступна: не паркуем сессию,
+            # отвечаем нейтральным завершением (on_complete сцены или generic).
+            await self.storage.clear(lane_key)
+            tail = await self.fsm._completion_messages(scene, new_session, chat_id)
+            return HandlerResult(messages=tuple(tail), session_after=None,
+                                 clear_session=True, error=None)
+        new_session.step_id = start_step.id
         # F-27: перезапуск сцены, где уже шёл диалог. Текст шапки принадлежит сцене,
         # а не ядру: раньше тут было вшито «Анкета начата заново.», чем портили
         # ответ админского меню и дневника. None → generic, "" → шапки нет.
@@ -315,6 +346,15 @@ class DialogRouter:
                     text=apply_branding("Сценарий успешно завершён.")))
                 return HandlerResult(messages=tuple(messages), session_after=None,
                                      clear_session=True, error=None)
+            # F-07 (RfI-06-3): в стартовой цепочке невыполнимые шаги тоже
+            # пропускаются; дальше идти некуда — нейтральное завершение.
+            nxt = await scene.landing_step(nxt, new_session.data)
+            if nxt is None:
+                await self.storage.clear(lane_key)
+                tail = await self.fsm._completion_messages(scene, new_session, chat_id)
+                return HandlerResult(messages=tuple(messages) + tuple(tail),
+                                     session_after=None, clear_session=True,
+                                     error=None)
             new_session.step_id = nxt.id
             messages.append(OutgoingMessage(
                 chat_id=chat_id,

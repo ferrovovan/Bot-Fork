@@ -25,8 +25,12 @@
   кортеж id зарегистрированных сцен по возрастанию (F-35; состояние сцен — в `StateStorage` (F-34), не здесь), `list_entry_commands`, `commands_for` (F-32).
 - **`DialogRouter(registry, storage, fsm_engine?, on_system_event?, cancel_commands?, cancel_buttons?)`**;
   `route(event) → HandlerResult`.
-- **`begin_scene(scene, lane_key, chat_id, had_session?, initial_data?)`** —
+- **`begin_scene(scene, lane_key, chat_id, had_session?, initial_data?, at_step?)`** —
   единый путь запуска для команды, кнопки и программного старта (F-22).
+  `at_step` (F-07, `ARCH-CHANGE: RfI-06-3`) — приземление «как если дошли»:
+  prompt и кнопки целевого шага, инфо-цепочка проигрывается; шага нет в сцене —
+  `ConfigError`. Порядок: `seed` → поверх `initial_data` (явный аргумент
+  старшего посева) → проверка `requires` → рендер.
 
 ## Инварианты
 
@@ -53,6 +57,12 @@
    `tests/test_info_step.py`.
 10. `list_scenes()` перечисляет id детерминированно (по возрастанию) и не меняет
     состояние реестра (F-35, `ARCH-CHANGE: RfI-06-1`) — `tests/test_registry.py`.
+11. Посев `scene.seed` выполняется при любом входе — команда, кнопка `scene:<id>`,
+    программный старт, `at_step` — до первого шага; явный `initial_data` старше
+    посева. Невыполнимые по `requires` шаги пропускаются по `next_step_id`;
+    если от точки входа недоступна вся цепочка — нейтральное завершение
+    (`on_complete`/generic) без парковки сессии (F-07, `ARCH-CHANGE: RfI-06-3`) —
+    `tests/test_seed_requires.py`.
 
 Где это лежит — [INTERNAL.md](INTERNAL.md).
 
@@ -67,4 +77,6 @@
 
 `tests/test_router.py` (8), `tests/test_scene_button.py` (5),
 `tests/test_cancel_commands.py` (5), `tests/test_lanes.py` (дорожки),
-системные события `tests/test_groups.py`, `tests/test_registry.py` (F-35), `tests/test_cancel_buttons.py` (F-36). Число — [INTERNAL.md](INTERNAL.md).
+системные события `tests/test_groups.py`, `tests/test_registry.py` (F-35),
+`tests/test_cancel_buttons.py` (F-36), `tests/test_seed_requires.py` (F-07:
+`at_step`, посев при команде/кнопке). Число — [INTERNAL.md](INTERNAL.md).

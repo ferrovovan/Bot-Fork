@@ -21,7 +21,7 @@ HEAD `c386469` (1.12.1) · **Правит:** координатор (пакет�
 | `on_system_event` оборачивается в `_dispatch_system_event` с try/except | хук, упавший на событии чата, не должен ронять диалог | `app.py:127-137` |
 | Дедуп — `OrderedDict` LRU (ёмкость `max(1, dedupe_capacity)`, по умолчанию 1024) | платформы ретранслируют callback; кеш не растёт бесконечно (F-18) | `app.py:72-74,190-197` |
 | `on_error` — пользователю нейтральный текст, в `HandlerResult.error` — `str(e)` с кодом `RUNTIME_ERROR` (F-20) | у продукта есть канал ошибок, у пользователя — нет трейсбека | `app.py:199-236` |
-| `start_scene` идёт через `router.begin_scene` + доставка адаптером; `send_prompt=False` — тихий старт (F-22) | job/outbox начинает сцену без входящего события | `app.py:145-181` |
+| `start_scene` идёт через `router.begin_scene` + доставка адаптером; `send_prompt=False` — тихий старт (F-22); `at_step` — приземление на произвольный шаг, `data` старше посева `scene.seed` (F-07, RfI-06-3) | job/outbox начинает сцену без входящего события, в т.ч. с середины («правка расписания» без перелистывания) | `app.py:149-190` |
 | Ленивые импорты `aiogram`/`vkbottle` внутри методов адаптеров | ядро импортируется без платформенных libs (NFR-03); факт 2026-11-04: на машине сборки их нет, сюита 185 зелёных | `adapters/telegram.py:342`, `adapters/vk.py:371` |
 | `cancel_buttons` прокидывается в `DialogRouter` рядом с `cancel_commands` (F-36, RfI-06-2, симметрия F-31) | политики продукта (надписи кнопок) не живут в движке; композиционный корень передаёт значение | `app.py:51,69-72` |
 | `run()` — `asyncio.run` + тихий выход по Ctrl-C | CLI-вход без шума | `app.py:273-278` |
@@ -38,7 +38,7 @@ HEAD `c386469` (1.12.1) · **Правит:** координатор (пакет�
 ```bash
 python3 -m pytest tests/test_config.py tests/test_runtime_guard.py \
     tests/test_send.py tests/test_demo_info.py -q
-python3 -m pytest tests -q        # база: 189 passed + 7 subtests (замер 2026-11-04, п49-4)
+python3 -m pytest tests -q        # база: 211 passed + 7 subtests (замер 2026-11-04, п49-3)
 ```
 
 ## Владелец и правила обновления

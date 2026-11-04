@@ -23,7 +23,7 @@
   dedupe_capacity?, cancel_commands?, cancel_buttons?)`** — `cancel_buttons`
   (`ARCH-CHANGE: RfI-06-2`): кнопки продолжения после отмены, задаёт продукт, по умолчанию нет (F-36); `from_env()` (env `ENABLED_PLATFORMS`,
   `TELEGRAM_BOT_TOKEN`/`VK_BOT_TOKEN`, `LOG_LEVEL`); `register_scene`; `start_scene`
-  (F-22); `handle`; `send` (F-11/F-01); `run`.
+  (F-22, `at_step` — F-07, `ARCH-CHANGE: RfI-06-3`); `handle`; `send` (F-11/F-01); `run`.
 - **`__all__`** пакета — витрина API ядра (типы, сцены, FSM, роутер, хранилища,
   адаптеры, исключения, `apply_branding`); состав меняется только со строкой очереди.
 - Один процесс — одна платформа (`telegram`|`vk`); одновременный запуск обеих
@@ -39,9 +39,13 @@
 3. Исключение в обработке с `on_error` — нейтральное сообщение + хук
    (синхронный или async), процесс жив; без хука — исключение наружу (F-20) —
    `tests/test_runtime_guard.py`.
-4. `start_scene` запускает сцену в её дорожке, сеет `initial_data`, доставляет
-   prompt адаптером; незарегистрированная id — ошибка до отправки (F-22) —
-   `tests/test_lanes.py`.
+4. `start_scene` запускает сцену в её дорожке, сеет данные и доставляет prompt
+   шага входа (F-22, F-07, `ARCH-CHANGE: RfI-06-3`). Порядок посева:
+   `SceneDefinition.seed` → поверх `initial_data` (явный аргумент старше посева)
+   → проверка `Step.requires`. `at_step` вне сцены — `ConfigError`. Стек
+   посещённых шагов движок не ведёт: назад — объявленное ребро `transitions`,
+   а не состояние ядра (снято D-18/D-19). Незарегистрированная id — ошибка до
+   отправки — `tests/test_lanes.py`, `tests/test_seed_requires.py`.
 5. `send` доставляет текст с кнопками и вложением напрямую, вне диалога (F-11/F-01) —
    `tests/test_send.py`, `tests/test_media.py`.
 6. Демо-сцена `/info` проходит end-to-end через публичный API на обеих

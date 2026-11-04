@@ -5,12 +5,13 @@ Enforces structural integrity and immutability of dialogue scenes.
 
 from __future__ import annotations
 
+import copy
 import inspect
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
 from bot_fork.builder import ButtonBuilder
 from bot_fork.exceptions import ConfigError
-from bot_fork.models import Button
+from bot_fork.models import Button, _check_json_value
 
 ValidatorFunc = Callable[[str], Union[bool, Tuple[bool, str], None]]
 # F-05: prompt может быть функцией от сессии (карточка слота, регламент из анкет).
@@ -24,6 +25,14 @@ ActionFunc = Callable[..., Any]
 # состоянию игрока («Анкета» vs «Пройти заново»). Валидируется при резолве
 # идентично статической: ≤4 кнопок, уникальные values.
 ButtonsFunc = Callable[..., Any]
+# F-07 (RfI-06-3): посев данных сцены — dict или функция от сессии (sync/async),
+# возвращающая JSON-совместимый dict (домен F-03). Вызывается движком при любом
+# входе (команда, кнопка, программный старт/at_step) до первого шага.
+SeedFunc = Callable[..., Any]
+# F-07 (RfI-06-3): условие применимости шага — функция от данных сессии
+# (sync/async), обязана вернуть bool. Невыполнение — шаг пропускается по
+# next_step_id; стека «назад» нет по решению D-18/D-19.
+RequiresFunc = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -41,10 +50,15 @@ class StepDefinition:
     next_step_id: Optional[str] = None
     complete: bool = False
     action: Optional[ActionFunc] = None
+    # F-07 (RfI-06-3): условие применимости шага — callable от данных сессии
+    # (или без аргументов), возвращающий bool. Нет условия — шаг всегда применим.
+    requires: Optional[RequiresFunc] = None
 
     def __post_init__(self) -> None:
         if not self.id or not isinstance(self.id, str):
             raise ConfigError("Step id must be a non-empty string")
+        if self.requires is not None and not callable(self.requires):
+            raise ConfigError(f"Step '{self.id}' requires must be a callable returning bool")
         if not callable(self.prompt) and (not self.prompt or not isinstance(self.prompt, str)):
             raise ConfigError(f"Step '{self.id}' prompt must be a non-empty string or a callable")
         if self.input_type not in ("text", "choice", "info"):
@@ -100,6 +114,29 @@ class StepDefinition:
             raise ConfigError(f"Step '{self.id}' dynamic buttons must return a sequence of Button, got {result!r}")
         return ButtonBuilder.keyboard(*result)  # те же лимиты, что у статической
 
+    async def meets_requires(self, data: Any = None) -> bool:
+        """F-07 (RfI-06-3): применим ли шаг при посадке на него.
+
+        Без условия — всегда применим (обратная совместимость). Условие
+        вызывается движком с данными сессии (арность адаптируется, sync/async,
+        конвенция F-05/F-29); обязана вернуть bool. Исключение продукта и
+        нелогичный возврат — `ConfigError`: условие относится к конфигурации
+        сцены, а не к вводу игрока.
+        """
+        if self.requires is None:
+            return True
+        result = self._call_with_session(self.requires, data)
+        if inspect.isawaitable(result):
+            try:
+                result = await result
+            except Exception as e:  # async-ошибка продукта не роняет роутер
+                raise ConfigError(f"Step '{self.id}' requires raised {e!r}") from e
+        if not isinstance(result, bool):
+            raise ConfigError(
+                f"Step '{self.id}' requires must return a bool, got {result!r}"
+            )
+        return result
+
     def _call_with_session(self, fn, session: Any):
         params = inspect.signature(fn).parameters
         takes_arg = any(
@@ -128,6 +165,7 @@ class Step:
         next: Optional[str] = None,
         complete: bool = False,
         action: Optional[ActionFunc] = None,
+        requires: Optional[RequiresFunc] = None,
     ) -> StepDefinition:
         return StepDefinition(
             id=id,
@@ -139,6 +177,7 @@ class Step:
             next_step_id=next,
             complete=complete,
             action=action,
+            requires=requires,
         )
 
     @staticmethod
@@ -148,6 +187,7 @@ class Step:
         next: Optional[str] = None,
         complete: bool = False,
         action: Optional[ActionFunc] = None,
+        requires: Optional[RequiresFunc] = None,
     ) -> StepDefinition:
         """Инфо-шаг: печатает prompt и идёт дальше сам, ввода не ждёт.
 
@@ -166,6 +206,7 @@ class Step:
             next_step_id=next,
             complete=complete,
             action=action,
+            requires=requires,
         )
 
     @staticmethod
@@ -177,6 +218,7 @@ class Step:
         next: Optional[str] = None,
         complete: bool = False,
         action: Optional[ActionFunc] = None,
+        requires: Optional[RequiresFunc] = None,
     ) -> StepDefinition:
         btn_tuple = buttons if callable(buttons) else ButtonBuilder.keyboard(*buttons)
         trans = dict(transitions) if transitions else {}
@@ -190,6 +232,7 @@ class Step:
             next_step_id=next,
             complete=complete,
             action=action,
+            requires=requires,
         )
 
 
@@ -213,6 +256,11 @@ class SceneDefinition:
     # «Анкета начата заново.» во все сцены — врали и админка, и дневник.
     # None → generic «Диалог начат заново.», "" → шапки нет вовсе (меню-сцены).
     restart_text: Optional[str] = None
+    # F-07 (RfI-06-3): предзаполнение данных сцены при ЛЮБОМ входе (команда,
+    # кнопка scene:<id>, программный старт, at_step) — dict или callable
+    # (UserSession → dict, sync/async, арность адаптируется). Применяется до
+    # первого шага; явный initial_data старшего посева; значения — JSON-домен F-03.
+    seed: Optional[Union[SeedFunc, Dict[str, Any]]] = None
     _step_map: Dict[str, StepDefinition] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -220,6 +268,22 @@ class SceneDefinition:
             raise ConfigError("Scene id must be a non-empty string")
         if self.lane not in ("user", "system"):
             raise ConfigError(f"Scene '{self.id}' lane must be 'user' or 'system', got '{self.lane}'")
+        # F-07: форма посева проверяется на построении (норма scenes: битая
+        # конфигурация вскрывается до диалога); dict-посев валидуется в JSON-домене F-03.
+        if self.seed is not None and not callable(self.seed):
+            if isinstance(self.seed, dict):
+                for k, v in self.seed.items():
+                    if not isinstance(k, str):
+                        raise ConfigError(
+                            f"Scene '{self.id}' seed: ключ {k!r} типа "
+                            f"'{type(k).__name__}' — ключи посева должны быть str"
+                        )
+                    _check_json_value(v, f"Scene '{self.id}' seed[{k!r}]")
+            else:
+                raise ConfigError(
+                    f"Scene '{self.id}' seed must be a dict or a callable returning "
+                    f"a dict, got '{type(self.seed).__name__}'"
+                )
         if not self.steps:
             raise ConfigError(f"Scene '{self.id}' must define at least 1 step (max 50)")
         if len(self.steps) > 50:
@@ -264,6 +328,69 @@ class SceneDefinition:
     def get_step(self, step_id: str) -> Optional[StepDefinition]:
         return self._step_map.get(step_id)
 
+    async def resolve_seed(self, session: Any) -> Dict[str, Any]:
+        """F-07 (RfI-06-3): предзаполнение `data` при входе в сцену.
+
+        Dict-посев копируется глубоко (F-03: вызывающий код не должен mutable-ить
+        сессию). Callable вызывается движком с сессией (арность адаптируется,
+        sync/async — конвенция F-05/F-29). Исключение продукта, возврат не-dict и
+        значение вне JSON-домена — `ConfigError`, а не тихий пустой вход.
+        """
+        if self.seed is None:
+            return {}
+        if not callable(self.seed):
+            return copy.deepcopy(self.seed)
+        try:
+            params = inspect.signature(self.seed).parameters
+            takes_arg = any(
+                p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                for p in params.values()
+            )
+            result = self.seed(session) if takes_arg else self.seed()
+            if inspect.isawaitable(result):
+                result = await result
+        except ConfigError:
+            raise
+        except Exception as e:  # продуктная ошибка посева не роняет роутер
+            raise ConfigError(f"Scene '{self.id}' seed callable raised {e!r}") from e
+        if not isinstance(result, dict):
+            raise ConfigError(
+                f"Scene '{self.id}' seed must return a dict, got {result!r}"
+            )
+        for k, v in result.items():
+            if not isinstance(k, str):
+                raise ConfigError(
+                    f"Scene '{self.id}' seed: ключ {k!r} типа "
+                    f"'{type(k).__name__}' — ключи посева должны быть str"
+                )
+            _check_json_value(v, f"Scene '{self.id}' seed[{k!r}]")
+        return copy.deepcopy(result)
+
+    async def landing_step(
+        self, step: Optional[StepDefinition], data: Any
+    ) -> Optional[StepDefinition]:
+        """F-07 (RfI-06-3): шаг, на который реально приземляемся, начиная со `step`.
+
+        Шаги с невыполненным `requires` пропускаются по `next_step_id` — движок
+        их не рендерит и не паркуется на них. None — цепочка дошла до конца
+        (шаг завершающий или без next): сцена считается завершённой, вызывающий
+        даёт нейтральный ответ. Взаимно указывающие невыполнимые шаги — цикл
+        пропуска — `ConfigError` (битая конфигурация).
+        """
+        cur = step
+        for _ in range(len(self.steps) + 1):
+            if cur is None:
+                return None
+            if await cur.meets_requires(data):
+                return cur
+            if cur.complete or not cur.next_step_id:
+                return None
+            cur = self.get_step(cur.next_step_id)
+        raise ConfigError(
+            f"Scene '{self.id}' has a skip loop: steps with unmet requires "
+            "reference each other via next_step_id"
+        )
+
 
 def Scene(
     id: str,
@@ -273,6 +400,7 @@ def Scene(
     lane: str = "user",
     on_complete: Optional[Callable[..., Any]] = None,
     restart_text: Optional[str] = None,
+    seed: Optional[Union[SeedFunc, Dict[str, Any]]] = None,
 ) -> SceneDefinition:
     """
     Factory function matching MVP target API specification:
@@ -293,4 +421,5 @@ def Scene(
         steps=step_tuple,
         lane=lane,
         on_complete=on_complete,
+        seed=seed,
     )

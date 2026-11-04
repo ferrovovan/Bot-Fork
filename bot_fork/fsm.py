@@ -301,6 +301,15 @@ class FSMEngine:
         messages: List[OutgoingMessage] = []
         cur = next_step
         for _ in range(10):  # защита от цикла info→info
+            # F-07 (RfI-06-3): шаг с невыполненным requires — не место посадки:
+            # пропускаем по next_step_id; дошли до конца — нейтральное завершение.
+            cur = await scene.landing_step(cur, new_session.data)
+            if cur is None:
+                messages.extend(
+                    await self._completion_messages(scene, new_session, event.chat_id)
+                )
+                return HandlerResult(messages=tuple(messages), session_after=None,
+                                     clear_session=True, error=None)
             new_session.step_id = cur.id
             messages.append(
                 OutgoingMessage(

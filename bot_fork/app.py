@@ -154,12 +154,17 @@ class BotForkApp:
         chat_id: str,
         data: Optional[dict] = None,
         send_prompt: bool = True,
+        at_step: Optional[str] = None,
     ) -> HandlerResult:
         """
         F-22: программный вход в сцену без входящего события — для jobs/outbox
         («подтвердите слот», «карточка тестовой игры»). Сцена стартует в своей полосе
         (lane), данные можно передать сразу в session.data; prompt первого шага
         доставляется текущим адаптером (отключается send_prompt=False).
+        F-07 (RfI-06-3): `at_step` — приземление на произвольный шаг сцены
+        («как если дошли»), например `start_scene("survey", at_step="schedule")`;
+        шага нет в сцене — `ConfigError`. Посев `scene.seed` выполняется и здесь,
+        явный `data` старшего посева.
         """
         scene = self.registry.get_scene(scene_id)
         if scene is None:
@@ -172,7 +177,8 @@ class BotForkApp:
         )
         existing = await self.storage.get(lane_key)
         result = await self.router.begin_scene(
-            scene, lane_key, str(chat_id), had_session=existing is not None, initial_data=data
+            scene, lane_key, str(chat_id),
+            had_session=existing is not None, initial_data=data, at_step=at_step,
         )
         if send_prompt:
             for out_msg in result.messages:

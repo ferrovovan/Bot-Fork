@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 from bot_fork.exceptions import ConfigError
 from bot_fork.fsm import FSMEngine, _action_takes_session, apply_branding
 from bot_fork.models import (
+    Button,
     ErrorInfo,
     HandlerResult,
     IncomingEvent,
@@ -90,6 +91,7 @@ class DialogRouter:
         fsm_engine: Optional[FSMEngine] = None,
         on_system_event=None,
         cancel_commands: Optional[Tuple[str, ...]] = None,
+        cancel_buttons: Optional[Tuple[Button, ...]] = None,
     ) -> None:
         self.registry = registry
         self.storage = storage
@@ -99,6 +101,10 @@ class DialogRouter:
         self.cancel_commands = tuple(
             c.lower() for c in (cancel_commands or ("/cancel",))
         )
+        # F-36 (симметрия F-31): кнопки продолжения после отмены задаёт продукт —
+        # движок прикрепляет их к обоим служебным ответам `/cancel` и не изобретает
+        # подписей (урок F-32). Пусто по умолчанию — текстовый ответ как раньше.
+        self.cancel_buttons = tuple(cancel_buttons or ())
         # F-13: callback(event) -> None | Awaitable, куда роутер отдаёт служебные события
         # («игрок присоединился», «бота добавили в чат»). Диалог на них не запускается.
         self.on_system_event = on_system_event
@@ -139,6 +145,7 @@ class DialogRouter:
                             OutgoingMessage(
                                 chat_id=event.chat_id,
                                 text=apply_branding(f"Диалог отменён. {hint}".strip()),
+                                buttons=self.cancel_buttons,  # F-36
                             ),
                         ),
                         session_after=None,
@@ -150,6 +157,7 @@ class DialogRouter:
                     OutgoingMessage(
                         chat_id=event.chat_id,
                         text=apply_branding("Активного диалога нет."),
+                        buttons=self.cancel_buttons,  # F-36: возврат нужен и здесь
                     ),
                 ),
                 session_after=None,

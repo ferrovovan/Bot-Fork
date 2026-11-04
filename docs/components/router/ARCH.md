@@ -23,7 +23,7 @@
 
 - **`SceneRegistry`**: `register`, `get_scene`, `resolve_command`, `list_scenes()` —
   кортеж id зарегистрированных сцен по возрастанию (F-35; состояние сцен — в `StateStorage` (F-34), не здесь), `list_entry_commands`, `commands_for` (F-32).
-- **`DialogRouter(registry, storage, fsm_engine?, on_system_event?, cancel_commands?)`**;
+- **`DialogRouter(registry, storage, fsm_engine?, on_system_event?, cancel_commands?, cancel_buttons?)`**;
   `route(event) → HandlerResult`.
 - **`begin_scene(scene, lane_key, chat_id, had_session?, initial_data?)`** —
   единый путь запуска для команды, кнопки и программного старта (F-22).
@@ -40,8 +40,9 @@
    `tests/test_lanes.py`.
 4. Набор команд отмены задаёт продукт (F-31); сверка точная по первому слову,
    регистронезависимая — `tests/test_cancel_commands.py`.
-5. Подсказка после отмены перечисляет реальные команды сцен (F-32) —
-   `tests/test_cancel_commands.py`.
+5. Ответ отмены несёт подсказку живых команд (F-32) и кнопки продолжения из
+   `cancel_buttons`, заданных продуктом (F-36, симметрия F-31; `ARCH-CHANGE: RfI-06-2`);
+   пусто — текстовый ответ как раньше; движок не изобретает подписей — `tests/test_cancel_commands.py`, `tests/test_cancel_buttons.py`.
 6. Payload `scene:<id>` запускает сцену как команда, в том числе без активной
    сессии; неизвестный `scene:` уходит общий путь (F-23) — `tests/test_scene_button.py`.
 7. Системная сцена стартует в своей дорожке и не трогает пользовательскую сессию (F-06) —
@@ -66,4 +67,4 @@
 
 `tests/test_router.py` (8), `tests/test_scene_button.py` (5),
 `tests/test_cancel_commands.py` (5), `tests/test_lanes.py` (дорожки),
-системные события `tests/test_groups.py`, `tests/test_registry.py` (F-35). Число — [INTERNAL.md](INTERNAL.md).
+системные события `tests/test_groups.py`, `tests/test_registry.py` (F-35), `tests/test_cancel_buttons.py` (F-36). Число — [INTERNAL.md](INTERNAL.md).

@@ -20,7 +20,8 @@
 ## Публичный контракт
 
 - **`BotForkApp(platform, adapter?, storage?, token?, on_error?, on_system_event?,
-  dedupe_capacity?, cancel_commands?)`**; `from_env()` (env `ENABLED_PLATFORMS`,
+  dedupe_capacity?, cancel_commands?, cancel_buttons?)`** — `cancel_buttons`
+  (`ARCH-CHANGE: RfI-06-2`): кнопки продолжения после отмены, задаёт продукт, по умолчанию нет (F-36); `from_env()` (env `ENABLED_PLATFORMS`,
   `TELEGRAM_BOT_TOKEN`/`VK_BOT_TOKEN`, `LOG_LEVEL`); `register_scene`; `start_scene`
   (F-22); `handle`; `send` (F-11/F-01); `run`.
 - **`__all__`** пакета — витрина API ядра (типы, сцены, FSM, роутер, хранилища,

@@ -1,45 +1,47 @@
 # contract/INTERNAL.md — Internal Arch: как контракт типов устроен сейчас
 
 **Компонент:** `bot_fork/models.py`, `bot_fork/exceptions.py` · **Снимок:**
-2026-11-04, HEAD `c386469` (1.12.1) · **Правит:** координатор (пакеты движка)
+2026-11-04, HEAD `c386469` (1.12.1) + F-03 (v1.12.4, п48-3) · **Правит:** координатор (пакеты движка)
 
 ## Карта файлов
 
 | Файл | Что внутри | Строк |
 |---|---|---|
-| `bot_fork/models.py` | `SessionKey`, `Button`, `Reject`, `IncomingEvent`, `Attachment`, `OutgoingMessage`, `UserSession`, `ErrorInfo`, `HandlerResult` | 268 |
+| `bot_fork/models.py` | `SessionKey`, `Button`, `Reject`, `IncomingEvent`, `Attachment`, `OutgoingMessage`, `UserSession`, `ErrorInfo`, `HandlerResult` + хелпер `_check_json_value` (F-03) | 330 |
 | `bot_fork/exceptions.py` | корень `BotForkError` + 5 потомков | 41 |
 
-Итого 2 файла, 309 строк. Сюита компонента: `test_models.py` (6), `test_media.py`
-(9, из них 3 про валидацию `Attachment`), `test_actions.py::test_reject_requires_text`.
+Итого 2 файла, 371 строка. Сюита компонента: `test_models.py` (6), `test_media.py`
+(9, из них 3 про валидацию `Attachment`), `test_actions.py::test_reject_requires_text`,
+`test_session_data_json.py` (14 тестов + 7 подтестов, F-03: домен значений данных
+сессии, Memory+Sql round-trip, совместимость строк).
 
 ## Ключевые решения (и почему так)
 
 | Решение | Зачем | Где |
 |---|---|---|
-| `SessionKey` — frozen dataclass, хешируемый | ключ словаря хранилища используется как есть (`storage.py:48`); дорожка — часть ключа (F-06) | `models.py:13-48` |
-| `lane` внутри ключа + `with_lane()` | системная сцена перехватывает чат, не затаптывая пользовательскую сессию | `models.py:18-26,38-40` |
-| Проверки лимитов в `__post_init__` | битый объект невозможно построить; ошибка указывает на место создания | `models.py:28-36,59-63,109-122,158-166,188-193` |
-| `IncomingEvent.text` стрижётся в `__post_init__` | пробельные хвосты не попадают ни в валидаторы, ни в проверку пустоты | `models.py:118-122` |
-| `Attachment.to_dict()` отдаёт размер, не байты | логи и песочница `web/` не разрастаются | `models.py:168-174` |
-| `UserSession.clone()` копирует словарь `data` | наружу всегда копия: вызывающий не мутирует состояние на месте | `models.py:216-223` |
-| `Reject(text, buttons)` — отдельный тип (F-28) | отказ отличим от успеха с пустым ответом | `models.py:69-83` |
-| `event_type`/`system_kind` (F-13) | сервисные события групп не будят диалог | `models.py:101-107` |
+| `SessionKey` — frozen dataclass, хешируемый | ключ словаря хранилища используется как есть (`storage.py:48`); дорожка — часть ключа (F-06) | `models.py:53-88` |
+| `lane` внутри ключа + `with_lane()` | системная сцена перехватывает чат, не затаптывая пользовательскую сессию | `models.py:58-66,78-80` |
+| Проверки лимитов в `__post_init__` | битый объект невозможно построить; ошибка указывает на место создания | `models.py:68-76,99-103,149-162,198-206,228-233` |
+| `IncomingEvent.text` стрижётся в `__post_init__` | пробельные хвосты не попадают ни в валидаторы, ни в проверку пустоты | `models.py:158-162` |
+| `Attachment.to_dict()` отдаёт размер, не байты | логи и песочница `web/` не разрастаются | `models.py:208-214` |
+| `UserSession.clone()`/`to_dict()` копируют `data` глубоко (`deepcopy`) | наружу всегда копия: вызывающий не мутирует состояние на месте; с F-03 в данных вложенные `list`/`dict`, поверхностная копия оставляла alias | `models.py:276-295` |
+| `UserSession.__post_init__` + `_check_json_value` (F-03): `data: Dict[str, Any]` принимает только JSON-совместимые значения (`str/int/float/bool/None/list/dict`, ключи `str`, NaN/Infinity запрещены), иначе `ConfigError` с адресом проблемного ключа | продукту не нужно оборачивать структуры в JSON-строку (F-03/D-18); несериализуемое вскрывается на построении, а не в JSON-колонке SqlStorage; старые строковые данные — валидное подмножество | `models.py:17-49,262-274` |
+| `Reject(text, buttons)` — отдельный тип (F-28) | отказ отличим от успеха с пустым ответом | `models.py:109-123` |
+| `event_type`/`system_kind` (F-13) | сервисные события групп не будят диалог | `models.py:141-147` |
 | `PlatformOperationNotSupported` — потомок `PlatformError` | «не умеет» отличается от «сломалось», но ловится одним except | `exceptions.py:26-36` |
 
 ## Ограничения и долги
 
 | `файл:строка` | Суть / как воспроизвести | Тяжесть | Решение | Метка |
 |---|---|---|---|---|
-| `models.py:213` | `UserSession.data` — `Dict[str, str]`; продукт хранит JSON строкой (F-03) | высокая | типизация данных сессии — решение комнаты | `RfI-candidate` |
-| `models.py:59-63` против `builder.py:23-30` | одни лимиты `Button`: `ValueError` при прямом построении, `ConfigError` из `ButtonBuilder` | низкая | согласовать классы исключений | — |
-| `models.py:109-122` | `IncomingEvent` изменяем, `text` правится после построения (иначе стрижка невозможна) | низкая | frozen + фабрика — позже | — |
+| `models.py:99-103` против `builder.py:23-30` | одни лимиты `Button`: `ValueError` при прямом построении, `ConfigError` из `ButtonBuilder` | низкая | согласовать классы исключений | — |
+| `models.py:149-162` | `IncomingEvent` изменяем, `text` правится после построения (иначе стрижка невозможна) | низкая | frozen + фабрика — позже | — |
 
 ## Как гонять тесты компонента
 
 ```bash
 python3 -m pytest tests/test_models.py tests/test_media.py -q
-python3 -m pytest tests -q          # полная база: 158 passed
+python3 -m pytest tests -q          # полная база: 173 passed + 7 подтестов (замер 2026-11-04, v1.12.4)
 ```
 
 ## Владелец и правила обновления

@@ -6,6 +6,7 @@ Maintains session state isolated by SessionKey in process memory.
 from __future__ import annotations
 
 import asyncio
+import copy
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
 from bot_fork.exceptions import StorageError
@@ -80,7 +81,9 @@ class MemoryStateStorage(StateStorage):
             return [
                 UserSession(
                     session_key=s.session_key, scene_id=s.scene_id,
-                    step_id=s.step_id, data=dict(s.data), updated_at=s.updated_at,
+                    # F-03: deepcopy — вложенные list/dict в данных снимка
+                    # не должны alias-иться с живыми сессиями хранилища.
+                    step_id=s.step_id, data=copy.deepcopy(s.data), updated_at=s.updated_at,
                 )
                 for s in self._sessions.values()
                 if s.scene_id == scene_id

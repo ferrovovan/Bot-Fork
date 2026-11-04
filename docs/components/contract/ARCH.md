@@ -46,6 +46,14 @@
    `tests/test_actions.py`.
 7. `HandlerResult` — атомарный ответ рантайма: сообщения, сессия после шага,
    флаг очистки, ошибка; пустой результат = молчание — `tests/test_models.py`.
+8. `UserSession.data` (F-03, закрыт решением комнаты `D-18`): значения
+   JSON-совместимые — `str | int | float (конечный) | bool | None | list | dict`
+   (вложенно, ключи только `str`); запись иного типа — `ConfigError` при
+   построении, до любого хранилища. Старый `Dict[str, str]` — валидное
+   подмножество; хранилище сериализует составные значения в TEXT (JSON) и читает
+   без переинтерпретации: строка-обёртка ряда v1.12 возвращается строкой
+   (совместимость) — `tests/test_session_data_json.py`.
+   `ARCH-CHANGE: RfI-05-1`.
 
 Где инварианты живут (файл и строки) — [INTERNAL.md](INTERNAL.md).
 
@@ -55,10 +63,14 @@
   переноситься TG↔VK.
 - Молчаливое сглаживание значений вне лимитов: нарушение вскрывается на
   построении, а не при отправке.
-- Хранение в `UserSession.data` чего-либо кроме строк без решения комнаты
-  (F-03 открыт).
+- Значения `UserSession.data` вне JSON-домена инварианта 8 (`set`, `datetime`,
+  кортежи, произвольные объекты, NaN/Infinity): `ConfigError` на построении,
+  а не сюрприз при сериализации в хранилище. Составные данные — настоящие
+  `list`/`dict`, а не JSON-обёртки в строке (обёртки продукта снимает пакет D2.4).
 
 ## Чем проверяется
 
 `tests/test_models.py` — типы и лимиты; `tests/test_media.py` — валидация
-`Attachment`; `tests/test_actions.py` — `Reject`. Число тестов — [INTERNAL.md](INTERNAL.md).
+`Attachment`; `tests/test_actions.py` — `Reject`; `tests/test_session_data_json.py`
+— домен значений `UserSession.data` (F-03, Memory+Sql round-trip). Число тестов —
+[INTERNAL.md](INTERNAL.md).

@@ -5,9 +5,49 @@ Conforms to ScenoMost Bot Fork MVP 3.1 specification.
 
 from __future__ import annotations
 
+import copy
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
+
+from bot_fork.exceptions import ConfigError
+
+
+def _check_json_value(value: Any, where: str) -> None:
+    """F-03: значение должно быть JSON-совместимым (рекурсивно).
+
+    Разрешены str, int, float (только конечные), bool, None, list и dict со
+    строковыми ключами. Всё остальное (set, datetime, кортежи, объекты) не
+    переживёт сериализацию в JSON-колонку SqlStateStorage — значит, отказ ещё
+    на создании сессии, а не сюрпризом в storage.
+    """
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ConfigError(
+                f"{where}: float {value!r} не представим в JSON "
+                "(NaN/Infinity запрещены в данных сессии)"
+            )
+        return
+    if isinstance(value, list):
+        for i, item in enumerate(value):
+            _check_json_value(item, f"{where}[{i}]")
+        return
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if not isinstance(k, str):
+                raise ConfigError(
+                    f"{where}: ключ {k!r} типа '{type(k).__name__}' — "
+                    "ключи вложенных dict в данных сессии должны быть str"
+                )
+            _check_json_value(v, f"{where}[{k!r}]")
+        return
+    raise ConfigError(
+        f"{where}: значение типа '{type(value).__name__}' несовместимо с JSON; "
+        "данные сессии могут содержать только str, int, float, bool, None, list, dict"
+    )
 
 
 @dataclass(frozen=True)
@@ -206,19 +246,41 @@ class OutgoingMessage:
 class UserSession:
     """
     Session state storing active scene, current step, and collected survey data.
+
+    F-03: `data` — JSON-совместимые значения (str, int, float, bool, None,
+    list, dict), а не только строки: продукту больше не нужно оборачивать
+    словари/списки в JSON-строку. Старые строковые данные валидны как раньше
+    (контракт расширяющий). Несериализуемое значение (set, datetime, объект,
+    NaN) — ConfigError при создании сессии, до любого хранилища.
     """
     session_key: SessionKey
     scene_id: str
     step_id: str
-    data: Dict[str, str] = field(default_factory=dict)
+    data: Dict[str, Any] = field(default_factory=dict)
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.data, dict):
+            raise ConfigError(
+                f"UserSession.data должен быть dict, получен "
+                f"'{type(self.data).__name__}'"
+            )
+        for k, v in self.data.items():
+            if not isinstance(k, str):
+                raise ConfigError(
+                    f"UserSession.data: ключ {k!r} типа '{type(k).__name__}' — "
+                    "ключи данных сессии должны быть str"
+                )
+            _check_json_value(v, f"UserSession.data[{k!r}]")
+
     def clone(self) -> UserSession:
+        # F-03: deepcopy — вложенные list/dict не alias-ятся с оригиналом,
+        # иначе правка данных в одной копии тихо меняла бы другую.
         return UserSession(
             session_key=self.session_key,
             scene_id=self.scene_id,
             step_id=self.step_id,
-            data=dict(self.data),
+            data=copy.deepcopy(self.data),
             updated_at=datetime.now(timezone.utc),
         )
 
@@ -227,7 +289,7 @@ class UserSession:
             "session_key": self.session_key.to_dict(),
             "scene_id": self.scene_id,
             "step_id": self.step_id,
-            "data": dict(self.data),
+            "data": copy.deepcopy(self.data),
             "updated_at": self.updated_at.isoformat(),
         }
 

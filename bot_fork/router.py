@@ -5,6 +5,7 @@ Routes commands, manages active session transitions, and handles /cancel and /in
 
 from __future__ import annotations
 
+import copy
 import inspect
 import logging
 from typing import Dict, List, Optional, Tuple
@@ -238,7 +239,9 @@ class DialogRouter:
             session_key=lane_key,
             scene_id=scene.id,
             step_id=scene.start_step_id,
-            data=dict(initial_data or {}),
+            # F-03: initial_data несёт JSON-совместимые значения (в т.ч. вложенные
+            # list/dict) — копируем глубоко, чтобы вызывающий код не mutable-ил сессию.
+            data=copy.deepcopy(initial_data) if initial_data else {},
         )
         # F-27: перезапуск сцены, где уже шёл диалог. Текст шапки принадлежит сцене,
         # а не ядру: раньше тут было вшито «Анкета начата заново.», чем портили

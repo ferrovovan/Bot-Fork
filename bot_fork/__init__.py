@@ -34,7 +34,24 @@ from bot_fork.scene import Scene, SceneDefinition, Step, StepDefinition
 from bot_fork.storage import MemoryStateStorage, StateStorage
 from bot_fork.sql_storage import SqlStateStorage
 
-__version__ = "1.12.5"
+# Версия читается из метаданных установленного пакета (решение D-19, пакет п49-4):
+# ручная сверка разъезжалась каждым патчем (факт 2026-11-04: `__version__` «1.12.5»
+# при `pyproject.toml` 1.12.8). Константа — только fallback для запуска из клона,
+# где пакет не установлен; на нормальном пути ручных цифр в коде нет.
+_FALLBACK_VERSION = "1.12.9"
+
+
+def _resolve_version() -> str:
+    """Версия пакета `bot-fork`: метаданные установленной дистрибуции;
+    PackageNotFoundError (или любая нечитаемая метаданность) — fallback-константа."""
+    try:
+        from importlib.metadata import version
+        return version("bot-fork")
+    except Exception:
+        return _FALLBACK_VERSION
+
+
+__version__ = _resolve_version()
 __all__ = [
     "BotForkApp",
     "Scene",

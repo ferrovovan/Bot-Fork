@@ -370,11 +370,9 @@ class FSMEngine:
         return [OutgoingMessage(chat_id=chat_id, text=apply_branding(self._build_completion_report(scene, session.data)))]
 
     def _build_completion_report(self, scene: SceneDefinition, data: Dict[str, str]) -> str:
-        """Generic-отчёт для сцен без on_complete (F-09: демо-тексты живут в самих сценах)."""
-        # Демонстрационный фолбэк: не «анкета» (так назывались все сцены,
-        # включая меню и жалобы), а честный «сценарий». Продукту с ПДн этот
-        # путь не показан: on_complete=lambda session: None (молчание, F-09).
-        lines = ["Сценарий завершён. Ваши ответы:"]
-        for k, v in data.items():
-            lines.append(f"• {k}: {v}")
-        return "\n".join(lines)
+        """Generic-отчёт для сцен без on_complete — нейтральный, без значений данных (Д-2, v1.12.3)."""
+        # ПДн в чат не выводим (SOUL продукта, данные.md п.7): ни ключи, ни
+        # значения session.data в текст не попадают — только нейтральная строка.
+        # Сцене с персональными данными нужен свой финал: on_complete (F-09) —
+        # строка/список (текст решает сама сцена) или None (молчание).
+        return "Сценарий завершён."

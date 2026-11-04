@@ -98,7 +98,8 @@ class TestLanesRouting(unittest.IsolatedAsyncioTestCase):
 
         res = await app.handle(IncomingEvent(platform="telegram", user_id="77", chat_id="77", text="вопрос3"))
         self.assertTrue(res.clear_session)
-        self.assertIn("вопрос2", res.messages[0].text)  # ответ анкеты дошёл до итога
+        self.assertIn("Сценарий завершён", res.messages[0].text)  # generic-отчёт без on_complete (F-09)
+        self.assertNotIn("вопрос2", res.messages[0].text)  # Д-2 (v1.12.3): значения ответов в чат не уходят
 
     async def test_system_scene_ignores_user_entry_command_replacement(self):
         """Команда user-сцены во время system-перехвата пишет в user-слот, перехват жив."""

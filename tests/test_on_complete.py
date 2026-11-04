@@ -65,6 +65,23 @@ class OnCompleteTests(unittest.IsolatedAsyncioTestCase):
         res = await self._finish(None)
         self.assertIn("Сценарий завершён", res.messages[0].text)
 
+    async def test_generic_report_has_no_data_values(self):
+        # Д-2 (v1.12.3): сцена без on_complete не печатает значения session.data —
+        # ПДн (телефон, имя) не уходят в чат; остаётся только нейтральная строка.
+        scene = SceneDefinition(
+            id="anketa", entry_commands=("/a",), start_step_id="phone",
+            steps=(Step.text(id="phone", prompt="Телефон и имя?", complete=True),),
+        )
+        self.app.register_scene(scene)
+        await self.app.handle(_event("/a", user="91"))
+        res = await self.app.handle(_event("+7-900-123-45-67, Иванова П.", user="91"))
+        text = res.messages[0].text
+        self.assertIn("Сценарий завершён", text)
+        self.assertNotIn("900-123-45-67", text)
+        self.assertNotIn("Иванова", text)
+        self.assertNotIn("phone", text)
+        self.assertNotIn("Ваши ответы", text)
+
 
 if __name__ == "__main__":
     unittest.main()

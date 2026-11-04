@@ -57,6 +57,6 @@ SQL собирается только из констант и параметр�
 
 ## Чем проверяется
 
-`tests/test_storage.py` (4), `tests/test_sql_storage.py` (11),
+`tests/test_storage.py` (4), `tests/test_sql_storage.py` (13),
 `tests/test_lanes.py` (миграция схемы и дорожки), `tests/test_stress_100_sessions.py` (1).
 Число — [INTERNAL.md](INTERNAL.md).

@@ -15,7 +15,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
-from bot_fork.exceptions import StorageError
+from bot_fork.exceptions import ConfigError, StorageError
 from bot_fork.models import SessionKey, UserSession
 from bot_fork.storage import StateStorage
 
@@ -137,13 +137,19 @@ class SqlStateStorage(StateStorage):
             ts = datetime.fromisoformat(updated_at)
         except (ValueError, TypeError):
             ts = datetime.now(timezone.utc)
-        return UserSession(
-            session_key=key,
-            scene_id=scene_id,
-            step_id=step_id,
-            data=data,
-            updated_at=ts,
-        )
+        try:
+            return UserSession(
+                session_key=key,
+                scene_id=scene_id,
+                step_id=step_id,
+                data=data,
+                updated_at=ts,
+            )
+        except ConfigError as e:
+            # F-03 хвост (п49-2): легаси-строка с NaN/±Inf проходит json.loads, но
+            # значение вне домена — повреждённые данные, а не конфигурация:
+            # хранилище не выпускает наружу ошибок модели домена (инвариант 7).
+            raise StorageError(f"Повреждённые данные сессии {key}: {e}") from e
 
     def _set_sync(self, session: UserSession) -> None:
         k = session.session_key
@@ -213,11 +219,15 @@ class SqlStateStorage(StateStorage):
                 ts = datetime.fromisoformat(updated_at)
             except (ValueError, TypeError):
                 ts = datetime.now(timezone.utc)
-            out.append(UserSession(
-                session_key=SessionKey(platform=platform, user_id=user_id,
-                                       chat_id=chat_id, lane=lane),
-                scene_id=sid, step_id=step_id, data=data, updated_at=ts,
-            ))
+            try:
+                out.append(UserSession(
+                    session_key=SessionKey(platform=platform, user_id=user_id,
+                                           chat_id=chat_id, lane=lane),
+                    scene_id=sid, step_id=step_id, data=data, updated_at=ts,
+                ))
+            except ConfigError as e:
+                # Тот же хвост F-03, что и в _get_sync: вне домена F-03 — StorageError.
+                raise StorageError(f"Повреждённые данные сессии {platform}/{user_id}: {e}") from e
         return out
 
     # ---------- интерфейс StateStorage ----------

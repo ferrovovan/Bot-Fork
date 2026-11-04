@@ -7,6 +7,7 @@ import os
 import tempfile
 import unittest
 
+from bot_fork.exceptions import ConfigError, StorageError
 from bot_fork.models import SessionKey, UserSession
 from bot_fork.sql_storage import SqlStateStorage, _sqlite_path
 
@@ -164,3 +165,38 @@ class TestListSceneSqlF34(unittest.IsolatedAsyncioTestCase):
     async def test_empty_scene(self):
         storage = SqlStateStorage(dsn=":memory:")
         self.assertEqual(await storage.list_scene("nope"), [])
+
+
+class TestLegacyNanRowF03Tail(unittest.IsolatedAsyncioTestCase):
+    """п49-2 (RFC-06 §6): хвост F-03 — легаси-строка с нелегальным JSON-токеном
+    `NaN` (`json.loads` его принимает) при чтении даёт `StorageError`, а не
+    `ConfigError` из `UserSession`: слой хранилища отвечает за битые данные."""
+
+    def _insert_legacy_row(self, storage, user_id: str, data_json: str) -> None:
+        """Прямая запись в обход UserSession — так в базе появляется легаси-строка
+        с NaN: её писал код до F-03, когда конструктор домен не проверял."""
+        storage._conn.execute(
+            "INSERT INTO botfork_sessions "
+            "(platform, user_id, chat_id, lane, scene_id, step_id, data, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("telegram", user_id, user_id, "user", "survey", "steam",
+             data_json, "2026-11-04T00:00:00+00:00"),
+        )
+        storage._conn.commit()
+
+    async def test_nan_row_on_get_is_storage_error_not_config(self):
+        storage = SqlStateStorage(dsn=":memory:")
+        key = _key(user_id="701", chat_id="701")
+        self._insert_legacy_row(storage, "701", '{"n": NaN}')
+        with self.assertRaises(StorageError) as cm:
+            await storage.get(key)
+        self.assertNotIsInstance(cm.exception, ConfigError)
+        self.assertIn("NaN", str(cm.exception))
+
+    async def test_nan_row_on_list_scene_is_storage_error(self):
+        storage = SqlStateStorage(dsn=":memory:")
+        self._insert_legacy_row(storage, "702", '{"n": Infinity}')
+        with self.assertRaises(StorageError) as cm:
+            await storage.list_scene("survey")
+        self.assertNotIsInstance(cm.exception, ConfigError)
+        self.assertIn("702", str(cm.exception))
